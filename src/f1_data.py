@@ -15,6 +15,8 @@ from typing import List, Optional
 # FastF1 is the library that provides Formula 1 timing and telemetry data
 import fastf1
 
+import inspect
+
 """
 This is a dataclass which is a simple container for session metadata.
 Just stores information nicely
@@ -67,7 +69,7 @@ def load_session(
     telemetry: bool = True,  # Whether to load telemetry data
     weather: bool = True,  # Whether to load weather data
     messages: bool = True,  # Whether to load race control messages
-    force_reload: bool = True,  # Force re-download even if cached
+    force_reload: bool = False,  # Force re-download even if cached
 ):
     """
     session_type examples:
@@ -77,18 +79,26 @@ def load_session(
         FP1, FP2, FP3
     """
 
-    # Request the session object from FastF1, this dosnt download the data yet
+    # Get the session object (no download yet)
     session = fastf1.get_session(year, round_number, session_type)
 
-    # Load all requested data into memory
-    session.load(
-        telemetry=telemetry,  # Load X/y, speed, gear, etc.
-        weather=weather,  # Load track temp, rain, etc
-        messages=messages,  # Load yellow flags, safety cars, etc
-        force=force_reload,  # Ignore cache if true
-    )
+    # Build kwargs we want to pass into session.load()
+    load_kwargs = {
+        "telemetry": telemetry,
+        "weather": weather,
+        "messages": messages,
+    }
 
-    # Return full loaded session object
+    # Find which parameters session.load() actually supports in YOUR installed version
+    supported_params = set(inspect.signature(session.load).parameters.keys())
+
+    # Only pass keys that exist in this version of FastF1
+    safe_kwargs = {k: v for k, v in load_kwargs.items() if k in supported_params}
+
+    # NOTE: force reload varies by version, so we DON'T pass force=...
+    # We'll just load normally; later we can add a cache-clear option if needed.
+    session.load(**safe_kwargs)
+
     return session
 
 
