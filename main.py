@@ -1,6 +1,9 @@
 # argparse is used to read command line arguments
 import argparse
 
+from src.telemetry import extract_driver_telemetry
+
+
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
 
@@ -48,6 +51,15 @@ def main():
     print(f"Circuit: {info.circuit_name}")
     print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
     print(f"Laps loaded: {len(session.laps)}")
+
+    telemetry = extract_driver_telemetry(session)
+
+    print(f"\nTelemetry extracted for {len(telemetry)} drivers")
+
+    sample_driver = list(telemetry.keys())[0]
+    print(f"Sample driver: {sample_driver}")
+    print("Telemetry keys:", telemetry[sample_driver].keys())
+    print("Total points:", len(telemetry[sample_driver]["time"]))
 
 
 if __name__ == "__main__":
