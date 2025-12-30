@@ -5,6 +5,13 @@ from src.telemetry import extract_driver_telemetry
 from src.replay_clock import build_global_timeline, resample_all_drivers
 from src.frames import build_frames
 from src.cache import load_replay_cache, save_replay_cache
+from src.track import (
+    get_reference_track_xy,
+    compute_bounds,
+    build_world_to_screen_transform,
+    world_to_screen,
+)
+
 
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
@@ -35,6 +42,8 @@ def main():
 
     # Ignore our computed replay cache and recompute everything
     parser.add_argument("--refresh", action="store_true")
+
+    parser.add_argument("--track-test", action="store_true")
 
     # Parse the arguments provided by the user
     args = parser.parse_args()
@@ -128,6 +137,34 @@ def main():
             timeline,
             frames,
         )
+
+        # Step 7: Build reference track and world->screen transform (optional test)
+        if args.track_test:
+            x_track, y_track = get_reference_track_xy(
+                session
+            )  # fastest lap track outline
+            xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
+
+            # Choose a window size that we will use later in Arcade
+            screen_w, screen_h = 1280, 720
+            scale, tx, ty = build_world_to_screen_transform(
+                xmin, xmax, ymin, ymax, screen_w, screen_h
+            )
+
+            print("\n=== TRACK TRANSFORM TEST ===")
+            print(
+                f"World bounds: xmin={xmin:.1f}, xmax={xmax:.1f}, ymin={ymin:.1f}, ymax={ymax:.1f}"
+            )
+            print(f"Transform: scale={scale:.6f}, tx={tx:.2f}, ty={ty:.2f}")
+
+            # Print the first few transformed track points
+            for k in range(5):
+                sx, sy = world_to_screen(
+                    float(x_track[k]), float(y_track[k]), scale, tx, ty
+                )
+                print(
+                    f"Track point {k}: world=({x_track[k]:.1f},{y_track[k]:.1f}) -> screen=({sx:.1f},{sy:.1f})"
+                )
 
         print(f"\nSaved replay cache to: {cache_path}")
 
