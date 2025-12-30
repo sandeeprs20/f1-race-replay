@@ -2,7 +2,7 @@
 import argparse
 
 from src.telemetry import extract_driver_telemetry
-
+from src.replay_clock import build_global_timeline, resample_all_drivers
 
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
@@ -60,6 +60,20 @@ def main():
     print(f"Sample driver: {sample_driver}")
     print("Telemetry keys:", telemetry[sample_driver].keys())
     print("Total points:", len(telemetry[sample_driver]["time"]))
+
+    timeline, t0, t1 = build_global_timeline(telemetry, fps=25)
+    resampled = resample_all_drivers(telemetry, timeline, t0)
+
+    print("\n=== REPLAY CLOCK BUILT ===")
+    print(f"Timeline frames: {len(timeline)} at 25 FPS")
+    print(f"Replay duration: {timeline[-1]:.2f} seconds")
+
+    sample = list(resampled.keys())[0]
+    print(f"\nSample resampled driver: {sample}")
+    print("Resampled keys:", resampled[sample].keys())
+    print("Resampled points:", len(resampled[sample]["time"]))
+    print("First 5 speeds:", resampled[sample]["speed"][:5])
+    print("First 5 gears:", resampled[sample]["gear"][:5])
 
 
 if __name__ == "__main__":
