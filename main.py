@@ -4,6 +4,7 @@ import argparse
 from src.telemetry import extract_driver_telemetry
 from src.replay_clock import build_global_timeline, resample_all_drivers
 from src.frames import build_frames
+from src.cache import load_replay_cache, save_replay_cache
 
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
@@ -29,6 +30,12 @@ def main():
     # Flag to force FastF1 to reload data instead of using cache
     parser.add_argument("--force", action="store_true")
 
+    # Frames per second for the replay clock (default: 25)
+    parser.add_argument("--fps", type=int, default=25)
+
+    # Ignore our computed replay cache and recompute everything
+    parser.add_argument("--refresh", action="store_true")
+
     # Parse the arguments provided by the user
     args = parser.parse_args()
 
@@ -38,61 +45,91 @@ def main():
     # Printing confirmation so we know cache is active
     print(f"FastF1 cache enabled: {cache_dir}")
 
-    # Load the requested F1 session data using fastf1
-    session = load_session(args.year, args.round, args.session, force_reload=args.force)
+    # Try to load our replay cache first unless referesh is required
+    cached = None
+    if not args.refresh:
+        cached = load_replay_cache(args.year, args.round, args.session, args.fps)
 
-    # Extract clean metadata from loaded session
-    info = get_session_info(session)
+    if cached is not None:
+        print("\nCache hit! Loaded replay from computed_data.")
+        print("Cache meta:", cached.meta)
 
-    print("\n=== SESSION LOADED ===")
+        timeline = cached.timeline
+        frames = cached.frames
 
-    # Printing all info for the loaded session
-    print(f"Event: {info.event_name}")
-    print(f"Session: {info.session_name}")
-    print(f"Circuit: {info.circuit_name}")
-    print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
-    print(f"Laps loaded: {len(session.laps)}")
+        print("\n=== CACHED REPLAY SUMMARY ===")
+        print(f"Frames: {len(frames)} at {args.fps} FPS")
+        print(f"Duration: {timeline[-1]:.2f} seconds")
 
-    telemetry = extract_driver_telemetry(session)
+    # Otherwise compute everything (slow path)
+    else:
+        print("\nCache miss (or --refresh). Computing replay...")
 
-    print(f"\nTelemetry extracted for {len(telemetry)} drivers")
+        # Step 2: Load session using FastF1
+        session = load_session(
+            args.year, args.round, args.session, force_reload=args.force
+        )
 
-    sample_driver = list(telemetry.keys())[0]
-    print(f"Sample driver: {sample_driver}")
-    print("Telemetry keys:", telemetry[sample_driver].keys())
-    print("Total points:", len(telemetry[sample_driver]["time"]))
+        # Extract clean metadata
+        info = get_session_info(session)
 
-    timeline, t0, t1 = build_global_timeline(telemetry, fps=25)
-    resampled = resample_all_drivers(telemetry, timeline, t0)
+        print("\n=== SESSION LOADED ===")
+        print(f"Event:   {info.event_name}")
+        print(f"Session: {info.session_name}")
+        print(f"Circuit: {info.circuit_name}")
+        print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
+        print(f"Laps loaded: {len(session.laps)}")
 
-    print("\n=== REPLAY CLOCK BUILT ===")
-    print(f"Timeline frames: {len(timeline)} at 25 FPS")
-    print(f"Replay duration: {timeline[-1]:.2f} seconds")
+        # Step 3: Extract stitched telemetry per driver
+        telemetry = extract_driver_telemetry(session)
+        print(f"\nTelemetry extracted for {len(telemetry)} drivers")
 
-    sample = list(resampled.keys())[0]
-    print(f"\nSample resampled driver: {sample}")
-    print("Resampled keys:", resampled[sample].keys())
-    print("Resampled points:", len(resampled[sample]["time"]))
-    print("First 5 speeds:", resampled[sample]["speed"][:5])
-    print("First 5 gears:", resampled[sample]["gear"][:5])
+        # Step 4: Build global replay timeline + resample all drivers onto it
+        timeline, t0, t1 = build_global_timeline(telemetry, fps=args.fps)
+        resampled = resample_all_drivers(telemetry, timeline, t0)
 
-    frames = build_frames(resampled, timeline)
+        print("\n=== REPLAY CLOCK BUILT ===")
+        print(f"Timeline frames: {len(timeline)} at {args.fps} FPS")
+        print(f"Replay duration: {timeline[-1]:.2f} seconds")
 
-    print("\n=== FRAMES BUILT ===")
-    print("Total frames:", len(frames))
+        # Step 5: Build per-frame state objects and compute positions
+        frames = build_frames(resampled, timeline)
 
-    # Print a few snapshots of the top 5 drivers by position
-    for idx in [0, len(frames) // 2, len(frames) - 1]:
-        frame = frames[idx]
-        t = frame["t"]
+        print("\n=== FRAMES BUILT ===")
+        print(f"Total frames: {len(frames)}")
 
-        # sort by pos
-        ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+        # Print a few snapshots of the top 5 drivers by position (debug)
+        for idx in [0, len(frames) // 2, len(frames) - 1]:
+            frame = frames[idx]
+            t = frame["t"]
+            ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+            top5 = ordered[:5]
+            top5_str = ", ".join([f"{drv}(P{st['pos']})" for drv, st in top5])
+            print(f"t={t:.2f}s  Top5: {top5_str}")
 
-        top5 = ordered[:5]
-        top5_str = ", ".join([f"{drv}(P{st['pos']})" for drv, st in top5])
+        # Step 6: Save our computed replay cache to disk
+        meta = {
+            "year": args.year,
+            "round": args.round,
+            "session": args.session,
+            "fps": args.fps,
+            "event_name": info.event_name,
+            "session_name": info.session_name,
+            "circuit_name": info.circuit_name,
+            "drivers": info.drivers,
+        }
 
-        print(f"t={t:.2f}s  Top5: {top5_str}")
+        cache_path = save_replay_cache(
+            args.year,
+            args.round,
+            args.session,
+            args.fps,
+            meta,
+            timeline,
+            frames,
+        )
+
+        print(f"\nSaved replay cache to: {cache_path}")
 
 
 if __name__ == "__main__":
