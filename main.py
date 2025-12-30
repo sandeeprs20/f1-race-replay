@@ -3,6 +3,7 @@ import argparse
 
 from src.telemetry import extract_driver_telemetry
 from src.replay_clock import build_global_timeline, resample_all_drivers
+from src.frames import build_frames
 
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
@@ -74,6 +75,24 @@ def main():
     print("Resampled points:", len(resampled[sample]["time"]))
     print("First 5 speeds:", resampled[sample]["speed"][:5])
     print("First 5 gears:", resampled[sample]["gear"][:5])
+
+    frames = build_frames(resampled, timeline)
+
+    print("\n=== FRAMES BUILT ===")
+    print("Total frames:", len(frames))
+
+    # Print a few snapshots of the top 5 drivers by position
+    for idx in [0, len(frames) // 2, len(frames) - 1]:
+        frame = frames[idx]
+        t = frame["t"]
+
+        # sort by pos
+        ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+
+        top5 = ordered[:5]
+        top5_str = ", ".join([f"{drv}(P{st['pos']})" for drv, st in top5])
+
+        print(f"t={t:.2f}s  Top5: {top5_str}")
 
 
 if __name__ == "__main__":

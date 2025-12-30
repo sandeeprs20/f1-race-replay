@@ -87,10 +87,10 @@ def build_global_timeline(all_driver_tel: dict, fps: int = 25):
         starts.append(tel["time"][0])
         ends.append(tel["time"][-1])
 
-    # Global start time is the earliest telemetry we have
+    # Global start time is the latest telemetry we have
     t0 = float(max(starts))
 
-    # Global end time is the latest telemetry we have
+    # Global end time is the earliest telemetry we have
     t1 = float(min(ends))
 
     # Fixed timestep for FPS
