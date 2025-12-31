@@ -1,6 +1,6 @@
 # argparse is used to read command line arguments
 import argparse
-
+from src.colors import driver_code_to_color
 from src.telemetry import extract_driver_telemetry
 from src.replay_clock import build_global_timeline, resample_all_drivers
 from src.frames import build_frames
@@ -188,11 +188,19 @@ def main():
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
 
+    # Build deterministic driver colors
+    driver_colors = {}
+    sample_frame = frames[0]["drivers"]
+
+    for drv in sample_frame.keys():
+        driver_colors[drv] = driver_code_to_color(drv)
+
     # Launch Arcade replay window
     window = F1ReplayWindow(
         frames=frames,
         track_xy=(x_track, y_track),
         transform=(scale, tx, ty),
+        driver_colors=driver_colors,
         fps=args.fps,
         width=screen_w,
         height=screen_h,

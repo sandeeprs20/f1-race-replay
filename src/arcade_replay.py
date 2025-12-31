@@ -26,6 +26,31 @@ class F1ReplayWindow(arcade.Window):
         # IMPORTANT: don't use "self.scale" (Arcade has a read-only property called scale)
         self.world_scale, self.world_tx, self.world_ty = transform
 
+        # Precompute track polyline in screen coordinates (performance)
+        self.track_pts_screen = []
+        for x, y in zip(self.track_x, self.track_y):
+            sx, sy = world_to_screen(
+                float(x), float(y), self.world_scale, self.world_tx, self.world_ty
+            )
+            self.track_pts_screen.append((sx, sy))
+
+        # Pre-create HUD text objects (draw_text is slow)
+        self.hud_text = arcade.Text(
+            "",
+            20,
+            self.height - 30,
+            arcade.color.WHITE,
+            14,
+        )
+
+        self.help_text = arcade.Text(
+            "Controls: Space=Pause  Up/Down=Speed  Left/Right=Seek  R=Restart",
+            20,
+            20,
+            arcade.color.LIGHT_GRAY,
+            12,
+        )
+
         self.driver_colors = driver_colors or {}
 
         self.frame_idx = 0.0
@@ -63,34 +88,25 @@ class F1ReplayWindow(arcade.Window):
             )
             pts.append((sx, sy))
 
-        if len(pts) >= 2:
-            arcade.draw_line_strip(pts, arcade.color.DARK_GRAY, 2)
+        if len(self.track_pts_screen) >= 2:
+            arcade.draw_line_strip(self.track_pts_screen, arcade.color.DARK_GRAY, 2)
 
         for drv, st in frame["drivers"].items():
             sx, sy = world_to_screen(
                 st["x"], st["y"], self.world_scale, self.world_tx, self.world_ty
             )
             col = self.driver_colors.get(drv, arcade.color.WHITE)
-            arcade.draw_circle_filled(sx, sy, 5, col)
+            arcade.draw_circle_filled(sx, sy, 6, col)
 
         t = frame["t"]
         speed = self.speed_choices[self.speed_i]
         status = "PAUSED" if self.paused else "PLAYING"
+        self.hud_text.text = (
+            f"{status}  t={t:.2f}s  speed={speed}x  frame={i}/{self.n_frames - 1}"
+        )
 
-        arcade.draw_text(
-            f"{status}  t={t:.2f}s  speed={speed}x  frame={i}/{self.n_frames - 1}",
-            20,
-            self.height - 30,
-            arcade.color.WHITE,
-            14,
-        )
-        arcade.draw_text(
-            "Controls: Space=Pause  Up/Down=Speed  Left/Right=Seek  R=Restart",
-            20,
-            20,
-            arcade.color.LIGHT_GRAY,
-            12,
-        )
+        self.hud_text.draw()
+        self.help_text.draw()
 
     def on_key_press(self, symbol: int, modifiers: int):
         if symbol == arcade.key.SPACE:
