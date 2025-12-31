@@ -11,7 +11,8 @@ from src.track import (
     build_world_to_screen_transform,
     world_to_screen,
 )
-
+import arcade
+from src.arcade_replay import F1ReplayWindow
 
 # Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
@@ -138,35 +139,67 @@ def main():
             frames,
         )
 
-        # Step 7: Build reference track and world->screen transform (optional test)
-        if args.track_test:
-            x_track, y_track = get_reference_track_xy(
-                session
-            )  # fastest lap track outline
-            xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
+    # Step 7: Build reference track and world->screen transform (optional test)
+    if args.track_test:
+        x_track, y_track = get_reference_track_xy(session)  # fastest lap track outline
+        xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
-            # Choose a window size that we will use later in Arcade
-            screen_w, screen_h = 1280, 720
-            scale, tx, ty = build_world_to_screen_transform(
-                xmin, xmax, ymin, ymax, screen_w, screen_h
+        # Choose a window size that we will use later in Arcade
+        screen_w, screen_h = 1280, 720
+        scale, tx, ty = build_world_to_screen_transform(
+            xmin, xmax, ymin, ymax, screen_w, screen_h
+        )
+
+        print("\n=== TRACK TRANSFORM TEST ===")
+        print(
+            f"World bounds: xmin={xmin:.1f}, xmax={xmax:.1f}, ymin={ymin:.1f}, ymax={ymax:.1f}"
+        )
+        print(f"Transform: scale={scale:.6f}, tx={tx:.2f}, ty={ty:.2f}")
+
+        # Print the first few transformed track points
+        for k in range(5):
+            sx, sy = world_to_screen(
+                float(x_track[k]), float(y_track[k]), scale, tx, ty
             )
-
-            print("\n=== TRACK TRANSFORM TEST ===")
             print(
-                f"World bounds: xmin={xmin:.1f}, xmax={xmax:.1f}, ymin={ymin:.1f}, ymax={ymax:.1f}"
+                f"Track point {k}: world=({x_track[k]:.1f},{y_track[k]:.1f}) -> screen=({sx:.1f},{sy:.1f})"
             )
-            print(f"Transform: scale={scale:.6f}, tx={tx:.2f}, ty={ty:.2f}")
 
-            # Print the first few transformed track points
-            for k in range(5):
-                sx, sy = world_to_screen(
-                    float(x_track[k]), float(y_track[k]), scale, tx, ty
-                )
-                print(
-                    f"Track point {k}: world=({x_track[k]:.1f},{y_track[k]:.1f}) -> screen=({sx:.1f},{sy:.1f})"
-                )
+    # ------------------------------------------------------------
+    # STEP 8: Build track geometry + launch Arcade window
+    # ------------------------------------------------------------
 
-        print(f"\nSaved replay cache to: {cache_path}")
+    # If frames were loaded from cache, we may not have a session object yet.
+    # FastF1 cache makes this load fast, so it is safe to do here.
+    if "session" not in locals():
+        session = load_session(args.year, args.round, args.session, force_reload=False)
+
+    # Build reference track polyline from the fastest lap
+    x_track, y_track = get_reference_track_xy(session)
+
+    # Compute world bounds for the track
+    xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
+
+    # Window size (used for world->screen transform)
+    screen_w, screen_h = 1280, 720
+
+    # Build world-to-screen transform
+    scale, tx, ty = build_world_to_screen_transform(
+        xmin, xmax, ymin, ymax, screen_w, screen_h
+    )
+
+    # Launch Arcade replay window
+    window = F1ReplayWindow(
+        frames=frames,
+        track_xy=(x_track, y_track),
+        transform=(scale, tx, ty),
+        fps=args.fps,
+        width=screen_w,
+        height=screen_h,
+        title=f"F1 Replay {args.year} R{args.round:02d} {args.session}",
+    )
+
+    arcade.run()
 
 
 if __name__ == "__main__":
