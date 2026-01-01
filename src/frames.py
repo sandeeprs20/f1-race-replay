@@ -16,6 +16,7 @@ def build_frames(
     timeline: np.ndarray,
     lap_length: float,
     tyre_map: dict | None = None,
+    weather_data=None,
 ):
     """
     Build per-frame driver states + compute positions.
@@ -28,6 +29,7 @@ def build_frames(
         timeline: replay time axis (seconds), shape (N,)
         lap_length: estimated lap length in meters
         tyre_map: dict[drv][lap_number] -> compound string (e.g., "SOFT", "MEDIUM", ...)
+        weather_data: pandas DataFrame with weather information (optional)
     """
     n_frames = len(timeline)
     drivers = list(resampled.keys())
@@ -100,6 +102,22 @@ def build_frames(
 
             driver_states[d] = st
 
-        frames.append({"t": t, "drivers": driver_states})
+        # Add weather data for this frame if available
+        weather_dict = {}
+        if weather_data is not None and not weather_data.empty:
+            # Find closest weather entry to current time
+            import pandas as pd
+
+            t_delta = pd.Timedelta(seconds=t)
+            idx = (weather_data["Time"] - t_delta).abs().idxmin()
+            weather_row = weather_data.loc[idx]
+            weather_dict = {
+                "AirTemp": float(weather_row.get("AirTemp", 0)),
+                "TrackTemp": float(weather_row.get("TrackTemp", 0)),
+                "Humidity": float(weather_row.get("Humidity", 0)),
+                "Rainfall": bool(weather_row.get("Rainfall", False)),
+            }
+
+        frames.append({"t": t, "drivers": driver_states, "weather": weather_dict})
 
     return frames

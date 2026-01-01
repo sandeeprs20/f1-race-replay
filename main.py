@@ -165,7 +165,21 @@ def main():
 
         tyre_map = build_tyre_map(session)
 
-        frames = build_frames(resampled, timeline, lap_length, tyre_map=tyre_map)
+        # Get weather data
+        weather_data = None
+        try:
+            if hasattr(session, "weather_data") and not session.weather_data.empty:
+                weather_data = session.weather_data
+        except Exception:
+            pass
+
+        frames = build_frames(
+            resampled,
+            timeline,
+            lap_length,
+            tyre_map=tyre_map,
+            weather_data=weather_data,
+        )
 
         print("\n=== FRAMES BUILT ===")
         print(f"Total frames: {len(frames)}")
@@ -190,7 +204,9 @@ def main():
     x_track, y_track, _speed_track = get_reference_track_xy(session)
     xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
-    screen_w, screen_h = 1280, 720
+    # Use larger window size (close to fullscreen)
+    screen_w, screen_h = 1230, 700
+
     scale, tx, ty = build_world_to_screen_transform(
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
@@ -206,6 +222,8 @@ def main():
         width=screen_w,
         height=screen_h,
         title=f"F1 Replay {args.year} R{args.round:02d} {args.session}",
+        race_info=info.event_name,
+        session_info=info.session_name,
     )
 
     arcade.run()

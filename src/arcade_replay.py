@@ -44,6 +44,8 @@ class F1ReplayWindow(arcade.Window):
         width=1280,
         height=720,
         title="F1 Replay",
+        race_info=None,
+        session_info=None,
     ):
         super().__init__(width, height, title)
 
@@ -57,12 +59,15 @@ class F1ReplayWindow(arcade.Window):
 
         self.driver_colors = driver_colors or {}
         self.fps = fps
+        self.race_info = race_info or "Unknown Race"
+        self.session_info = session_info or "Unknown Session"
 
         # Playback state
         self.frame_idx = 0.0
         self.paused = False
         self.speed_choices = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
         self.speed_i = 1
+        self.show_ui = True  # Toggle for showing/hiding UI panels
 
         arcade.set_background_color(arcade.color.BLACK)
 
@@ -74,14 +79,20 @@ class F1ReplayWindow(arcade.Window):
             )
             self.track_pts_screen.append((sx, sy))
 
-        # HUD text
-        self.hud_text = arcade.Text("", 20, self.height - 30, arcade.color.WHITE, 14)
+        # HUD text - Lap and Race time (top left)
+        self.lap_text = arcade.Text(
+            "", 20, self.height - 25, arcade.color.WHITE, 16, bold=True
+        )
+        self.race_time_text = arcade.Text(
+            "", 20, self.height - 48, arcade.color.LIGHT_GRAY, 13
+        )
+
         self.help_text = arcade.Text(
-            "Controls: Space=Pause  Up/Down=Speed  Left/Right=Seek  R=Restart",
+            "[SPACE] Pause/Resume  [←/→] Rewind / Fast-Forward  [↑/↓] Speed ++/--  [R] Restart  [H] Hide/Show UI",
             20,
             20,
             arcade.color.LIGHT_GRAY,
-            12,
+            11,
         )
 
         # ---------------------------
@@ -147,34 +158,99 @@ class F1ReplayWindow(arcade.Window):
         self.tyre_icon_size = 16  # px
 
         # ---------------------------
-        # Telemetry panel (left) — smaller so it doesn't cover track
+        # Compact Weather box (top left, below lap info)
         # ---------------------------
-        self.tel_w = 220
-        self.tel_h = 200
-        self.tel_x = 16
-        self.tel_y = self.height - self.tel_h - 60
+        self.compact_weather_w = 190
+        self.compact_weather_h = 145
+        self.compact_weather_x = 20
+        self.compact_weather_y = self.height - 220
 
-        self.tel_title = arcade.Text(
-            "",
-            self.tel_x + 10,
-            self.tel_y + self.tel_h - 10,
+        self.compact_weather_title = arcade.Text(
+            "Weather",
+            self.compact_weather_x + 10,
+            self.compact_weather_y + self.compact_weather_h - 10,
             arcade.color.WHITE,
             14,
+            bold=True,
             anchor_x="left",
             anchor_y="top",
         )
-        self.tel_lines = [
+        self.compact_weather_lines = [
             arcade.Text(
                 "",
-                self.tel_x + 10,
-                self.tel_y + self.tel_h - 36 - i * 18,
+                self.compact_weather_x + 10,
+                self.compact_weather_y + self.compact_weather_h - 35 - i * 20,
                 arcade.color.LIGHT_GRAY,
                 11,
                 anchor_x="left",
                 anchor_y="top",
             )
-            for i in range(8)
+            for i in range(5)
         ]
+
+        # ---------------------------
+        # Multiple compact driver telemetry boxes (left side, stacked)
+        # ---------------------------
+        self.driver_box_w = 220
+        self.driver_box_h = 130
+        self.max_driver_boxes = 1  # Show only selected driver
+
+        # Create text objects for each driver box
+        self.driver_boxes = []
+        for i in range(self.max_driver_boxes):
+            box = {
+                "title": arcade.Text(
+                    "",
+                    0,
+                    0,
+                    arcade.color.WHITE,
+                    13,
+                    bold=True,
+                    anchor_x="left",
+                    anchor_y="top",
+                ),
+                "lines": [
+                    arcade.Text(
+                        "",
+                        0,
+                        0,
+                        arcade.color.LIGHT_GRAY,
+                        11,
+                        anchor_x="left",
+                        anchor_y="top",
+                    )
+                    for _ in range(4)
+                ],
+                "throttle_pct": arcade.Text(
+                    "", 0, 0, arcade.color.WHITE, 10, bold=True, anchor_x="center"
+                ),
+                "brake_pct": arcade.Text(
+                    "", 0, 0, arcade.color.WHITE, 10, bold=True, anchor_x="center"
+                ),
+            }
+            self.driver_boxes.append(box)
+
+        # Interval gap text objects (20 for leaderboard rows)
+        self.gap_texts = [
+            arcade.Text(
+                "",
+                0,
+                0,
+                arcade.color.LIGHT_GRAY,
+                12,
+                anchor_x="right",
+            )
+            for _ in range(20)
+        ]
+
+        # Load weather icons for compact display
+        weather_dir = os.path.join(base_dir, "images", "weather")
+        self.weather_textures = {}
+        for name in ["clear", "rain", "cloudy"]:
+            path = os.path.join(weather_dir, f"{name}.png")
+            if os.path.exists(path):
+                self.weather_textures[name] = arcade.load_texture(path)
+        self.weather_icon_size = 24
 
         # Click rects for leaderboard rows (rebuilt each draw)
         self._lb_rects = []
@@ -226,10 +302,16 @@ class F1ReplayWindow(arcade.Window):
 
         frame = self.frames[int(self.frame_idx)]
 
-        # Track look (thick base + thin highlight)
+        # Track look (enhanced multi-layer racing line)
         if len(self.track_pts_screen) >= 2:
-            arcade.draw_line_strip(self.track_pts_screen, arcade.color.DIM_GRAY, 10)
-            arcade.draw_line_strip(self.track_pts_screen, arcade.color.LIGHT_GRAY, 2)
+            # Outer glow (subtle depth effect)
+            arcade.draw_line_strip(self.track_pts_screen, (40, 40, 45), 16)
+            # Base layer (dark foundation)
+            arcade.draw_line_strip(self.track_pts_screen, (25, 25, 30), 12)
+            # Mid layer (provides depth)
+            arcade.draw_line_strip(self.track_pts_screen, (80, 80, 90), 6)
+            # Highlight line (crisp center line)
+            arcade.draw_line_strip(self.track_pts_screen, (220, 220, 230), 2)
 
         # Cars
         for drv, st in frame["drivers"].items():
@@ -245,17 +327,29 @@ class F1ReplayWindow(arcade.Window):
 
             arcade.draw_circle_filled(sx, sy, r, col)
 
-        # HUD
-        t = frame["t"]
+        # HUD - Lap counter and race time
+        # Calculate current lap from leader
+        ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+        leader_lap = int(ordered[0][1].get("lap", 1)) if ordered else 1
+        max_lap = max(int(st.get("lap", 1)) for _, st in ordered) if ordered else 1
+
+        self.lap_text.text = f"Lap: {leader_lap}/{max_lap}"
         speed = self.speed_choices[self.speed_i]
-        status = "PAUSED" if self.paused else "PLAYING"
-        self.hud_text.text = f"{status}  t={t:.2f}s  speed={speed}x  frame={int(self.frame_idx)}/{self.n_frames - 1}"
-        self.hud_text.draw()
+        t = frame["t"]
+        minutes = int(t // 60)
+        seconds = int(t % 60)
+        self.race_time_text.text = f"Race Time: {minutes:02d}:{seconds:02d} (x{speed})"
+
+        self.lap_text.draw()
+        self.race_time_text.draw()
         self.help_text.draw()
 
-        # UI panels
-        self._draw_leaderboard(frame)
-        self._draw_telemetry_panel(frame)
+        # UI panels (can be toggled off)
+        if self.show_ui:
+            self._draw_leaderboard(frame)
+            self._draw_compact_weather(frame)
+            self._draw_driver_boxes(frame)
+            self._draw_progress_bar(frame)
 
     def _draw_leaderboard(self, frame):
         # Panel background
@@ -344,7 +438,7 @@ class F1ReplayWindow(arcade.Window):
 
             # Interval gap to car ahead (seconds), using avg speed of (ahead + this)
             if idx == 0:
-                gap_str = "—"
+                gap_str = "LEADER"
             else:
                 gap_m = max(0.0, prog_list[idx - 1] - prog_list[idx])
 
@@ -360,14 +454,10 @@ class F1ReplayWindow(arcade.Window):
 
                 gap_str = f"+{gap_s:.1f}"
 
-            arcade.draw_text(
-                gap_str,
-                x_gap,
-                row_cy - 7,
-                arcade.color.LIGHT_GRAY,
-                12,
-                anchor_x="right",
-            )
+            self.gap_texts[idx].text = gap_str
+            self.gap_texts[idx].x = x_gap
+            self.gap_texts[idx].y = row_cy - 7
+            self.gap_texts[idx].draw()
 
             # Tyre icon
             key = _compound_key(st.get("compound", None))
@@ -389,59 +479,301 @@ class F1ReplayWindow(arcade.Window):
         # Clear unused rows
         for j in range(len(ordered), 20):
             self.lb_rows[j].text = ""
+            self.gap_texts[j].text = ""
 
-    def _draw_telemetry_panel(self, frame):
-        if self.selected_driver is None:
-            return
-        if self.selected_driver not in frame["drivers"]:
-            return
-
-        st = frame["drivers"][self.selected_driver]
-
+    def _draw_compact_weather(self, frame):
+        # Compact weather box background
         arcade.draw_lrbt_rectangle_filled(
-            self.tel_x,
-            self.tel_x + self.tel_w,
-            self.tel_y,
-            self.tel_y + self.tel_h,
-            (18, 18, 18, 225),
+            self.compact_weather_x,
+            self.compact_weather_x + self.compact_weather_w,
+            self.compact_weather_y,
+            self.compact_weather_y + self.compact_weather_h,
+            (20, 20, 24, 230),
         )
         arcade.draw_lrbt_rectangle_outline(
-            self.tel_x,
-            self.tel_x + self.tel_w,
-            self.tel_y,
-            self.tel_y + self.tel_h,
-            arcade.color.DARK_GRAY,
+            self.compact_weather_x,
+            self.compact_weather_x + self.compact_weather_w,
+            self.compact_weather_y,
+            self.compact_weather_y + self.compact_weather_h,
+            (80, 80, 90),
             2,
         )
 
-        self.tel_title.text = f"{self.selected_driver}"
-        self.tel_title.draw()
+        self.compact_weather_title.draw()
 
+        # Get weather data
+        weather = frame.get("weather", {})
+        track_temp = weather.get("TrackTemp", 0)
+        air_temp = weather.get("AirTemp", 0)
+        humidity = weather.get("Humidity", 0)
+        rainfall = weather.get("Rainfall", False)
+        wind_speed = weather.get("WindSpeed", 0) if "WindSpeed" in weather else 0
+
+        # Weather icon
+        icon_key = "rain" if rainfall else ("cloudy" if humidity > 70 else "clear")
+        tex = self.weather_textures.get(icon_key)
+        if tex is not None:
+            icon_x = (
+                self.compact_weather_x
+                + self.compact_weather_w
+                - self.weather_icon_size
+                - 10
+            )
+            icon_y = (
+                self.compact_weather_y
+                + self.compact_weather_h
+                - self.weather_icon_size
+                - 8
+            )
+            rect = arcade.XYWH(
+                icon_x, icon_y, self.weather_icon_size, self.weather_icon_size
+            )
+            arcade.draw_texture_rect(rect=rect, texture=tex, angle=0, alpha=255)
+
+        # Weather info
+        lines = [
+            f"🌡️ Track: {track_temp:.1f}°C" if track_temp > 0 else "🌡️ Track: --",
+            f"🌡️ Air: {air_temp:.1f}°C" if air_temp > 0 else "🌡️ Air: --",
+            f"💧 Humidity: {humidity:.0f}%" if humidity > 0 else "💧 Humidity: --",
+            f"💨 Wind: {wind_speed:.1f} km/h S" if wind_speed > 0 else "💨 Wind: --",
+            f"🌧️ Rain: {'DRY' if not rainfall else 'WET'}",
+        ]
+
+        for i, text in enumerate(lines):
+            self.compact_weather_lines[i].text = text
+            self.compact_weather_lines[i].draw()
+
+    def _draw_driver_boxes(self, frame):
+        # Only show selected driver's telemetry
+        if self.selected_driver is None:
+            # Default to leader if none selected
+            ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+            if ordered:
+                self.selected_driver = ordered[0][0]
+            else:
+                return
+
+        if self.selected_driver not in frame["drivers"]:
+            return
+
+        # Get selected driver data
+        st = frame["drivers"][self.selected_driver]
+        drv = self.selected_driver
+        box = self.driver_boxes[0]
+
+        # Get all drivers ordered by position for gap calculations
+        ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+        driver_idx = next((i for i, (d, _) in enumerate(ordered) if d == drv), -1)
+
+        # Calculate box position (below weather)
+        box_x = self.compact_weather_x
+        box_y = self.compact_weather_y - self.driver_box_h - 10
+
+        # Driver color
+        driver_col = self.driver_colors.get(drv, arcade.color.WHITE)
+
+        # Box background
+        arcade.draw_lrbt_rectangle_filled(
+            box_x,
+            box_x + self.driver_box_w,
+            box_y,
+            box_y + self.driver_box_h,
+            (20, 20, 24, 230),
+        )
+
+        # Colored left border
+        arcade.draw_lrbt_rectangle_filled(
+            box_x,
+            box_x + 4,
+            box_y,
+            box_y + self.driver_box_h,
+            driver_col,
+        )
+
+        # Box outline
+        arcade.draw_lrbt_rectangle_outline(
+            box_x,
+            box_x + self.driver_box_w,
+            box_y,
+            box_y + self.driver_box_h,
+            (80, 80, 90),
+            2,
+        )
+
+        # Driver info
         speed = float(st.get("speed", 0.0))
         gear = int(st.get("gear", 0))
         drs = int(st.get("drs", 0))
-        lap = int(st.get("lap", 0))
         pos = int(st.get("pos", 0))
 
-        throttle = st.get("throttle", None)
-        brake = st.get("brake", None)
+        throttle_val = min(max(float(st.get("throttle", 0)), 0.0), 100.0)
+        brake_val = min(max(float(st.get("brake", 0)), 0.0), 100.0)
 
-        comp = st.get("compound", None)
-        comp_key = _compound_key(comp).upper()
+        # Calculate gaps
+        prog_list = [float(s.get("progress", 0)) for _, s in ordered]
+        spd_list = [float(s.get("speed", 1)) for _, s in ordered]
 
-        lines = [
-            f"P{pos}   Lap {lap}",
-            f"Speed: {speed:.0f} km/h",
-            f"Gear: {gear}",
-            f"DRS: {'ON' if _drs_is_active(drs) else 'OFF'}",
-            f"Tyre: {comp_key}",
-            f"Thr: {float(throttle):.0f}%" if throttle is not None else "Thr: -",
-            f"Brk: {float(brake):.0f}%" if brake is not None else "Brk: -",
-        ]
+        gap_ahead = ""
+        gap_behind = ""
+        ahead_driver = ""
+        behind_driver = ""
 
-        for i, text in enumerate(lines[: len(self.tel_lines)]):
-            self.tel_lines[i].text = text
-            self.tel_lines[i].draw()
+        if driver_idx > 0:
+            ahead_driver = ordered[driver_idx - 1][0]
+            gap_m = max(0.0, prog_list[driver_idx - 1] - prog_list[driver_idx])
+            spd_ahead = max(spd_list[driver_idx - 1] / 3.6, 1.0)
+            spd_this = max(spd_list[driver_idx] / 3.6, 1.0)
+            avg_spd = max(0.5 * (spd_ahead + spd_this), 1.0)
+            gap_s = gap_m / avg_spd
+            gap_ahead = f"+{gap_s:.1f}s"
+
+        if driver_idx < len(ordered) - 1:
+            behind_driver = ordered[driver_idx + 1][0]
+            gap_m = max(0.0, prog_list[driver_idx] - prog_list[driver_idx + 1])
+            spd_behind = max(spd_list[driver_idx + 1] / 3.6, 1.0)
+            spd_this = max(spd_list[driver_idx] / 3.6, 1.0)
+            avg_spd = max(0.5 * (spd_behind + spd_this), 1.0)
+            gap_s = gap_m / avg_spd
+            gap_behind = f"-{gap_s:.1f}s"
+            # Title
+            box["title"].text = f"Driver: {drv}"
+            box["title"].color = driver_col
+            box["title"].x = box_x + 10
+            box["title"].y = box_y + self.driver_box_h - 8
+            box["title"].draw()
+
+            # Info lines
+            lines = [
+                f"Speed: {speed:.0f} km/h",
+                f"Gear: {gear}",
+                f"DRS: {'OFF' if not _drs_is_active(drs) else 'ON'}",
+                f"Ahead (ALO): {gap_ahead}  Behind (SAI): {gap_behind}"
+                if gap_ahead or gap_behind
+                else "Ahead: N/A",
+            ]
+
+            for i, text in enumerate(lines):
+                box["lines"][i].text = text
+                box["lines"][i].x = box_x + 10
+                box["lines"][i].y = box_y + self.driver_box_h - 30 - i * 18
+                box["lines"][i].draw()
+
+            # Throttle and brake bars (vertical, on the right)
+            bar_w = 12
+            bar_h = 60
+            bar_x = box_x + self.driver_box_w - 35
+            bar_y = box_y + 20
+
+            # Throttle bar (green)
+            arcade.draw_lrbt_rectangle_filled(
+                bar_x,
+                bar_x + bar_w,
+                bar_y,
+                bar_y + bar_h,
+                (30, 30, 35),
+            )
+            if throttle_val > 0:
+                fill_h = (throttle_val / 100.0) * bar_h
+                green_intensity = min(int(100 + (throttle_val / 100.0) * 155), 255)
+                arcade.draw_lrbt_rectangle_filled(
+                    bar_x,
+                    bar_x + bar_w,
+                    bar_y,
+                    bar_y + fill_h,
+                    (0, green_intensity, 50),
+                )
+            arcade.draw_lrbt_rectangle_outline(
+                bar_x,
+                bar_x + bar_w,
+                bar_y,
+                bar_y + bar_h,
+                (80, 80, 90),
+                1,
+            )
+
+            # Throttle label
+            box["throttle_pct"].text = "THR"
+            box["throttle_pct"].x = bar_x + bar_w / 2
+            box["throttle_pct"].y = bar_y + bar_h + 8
+            box["throttle_pct"].draw()
+
+            # Brake bar (red)
+            brake_x = bar_x + bar_w + 4
+            arcade.draw_lrbt_rectangle_filled(
+                brake_x,
+                brake_x + bar_w,
+                bar_y,
+                bar_y + bar_h,
+                (30, 30, 35),
+            )
+            if brake_val > 0:
+                fill_h = (brake_val / 100.0) * bar_h
+                red_intensity = min(int(150 + (brake_val / 100.0) * 105), 255)
+                arcade.draw_lrbt_rectangle_filled(
+                    brake_x,
+                    brake_x + bar_w,
+                    bar_y,
+                    bar_y + fill_h,
+                    (red_intensity, 30, 30),
+                )
+            arcade.draw_lrbt_rectangle_outline(
+                brake_x,
+                brake_x + bar_w,
+                bar_y,
+                bar_y + bar_h,
+                (80, 80, 90),
+                1,
+            )
+
+        # Brake label
+        box["brake_pct"].text = "BRK"
+        box["brake_pct"].x = brake_x + bar_w / 2
+        box["brake_pct"].y = bar_y + bar_h + 8
+        box["brake_pct"].draw()
+
+    def _draw_progress_bar(self, frame):
+        # Progress bar at bottom showing race progress
+        bar_w = self.width - 40
+        bar_h = 8
+        bar_x = 20
+        bar_y = 50
+
+        # Background
+        arcade.draw_lrbt_rectangle_filled(
+            bar_x,
+            bar_x + bar_w,
+            bar_y,
+            bar_y + bar_h,
+            (40, 40, 45),
+        )
+
+        # Progress fill
+        progress = self.frame_idx / max(self.n_frames - 1, 1)
+        fill_w = progress * bar_w
+
+        # Gradient from green to yellow to red
+        if progress < 0.5:
+            color = (int(progress * 2 * 255), 200, 50)
+        else:
+            color = (255, int((1 - progress) * 2 * 200), 50)
+
+        arcade.draw_lrbt_rectangle_filled(
+            bar_x,
+            bar_x + fill_w,
+            bar_y,
+            bar_y + bar_h,
+            color,
+        )
+
+        # Border
+        arcade.draw_lrbt_rectangle_outline(
+            bar_x,
+            bar_x + bar_w,
+            bar_y,
+            bar_y + bar_h,
+            (100, 100, 105),
+            2,
+        )
 
     def on_key_press(self, symbol: int, modifiers: int):
         if symbol == arcade.key.SPACE:
@@ -449,6 +781,8 @@ class F1ReplayWindow(arcade.Window):
         elif symbol == arcade.key.R:
             self.frame_idx = 0.0
             self.paused = False
+        elif symbol == arcade.key.H:
+            self.show_ui = not self.show_ui
         elif symbol == arcade.key.UP:
             self.speed_i = min(self.speed_i + 1, len(self.speed_choices) - 1)
         elif symbol == arcade.key.DOWN:
