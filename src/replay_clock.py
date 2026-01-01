@@ -81,25 +81,36 @@ def build_global_timeline(all_driver_tel: dict, fps: int = 25):
     ends = []
 
     for drv, tel in all_driver_tel.items():
-        if len(tel["time"]) == 0:
+        t = tel.get("time", None)
+        if t is None or len(t) < 2:
             continue
 
-        starts.append(tel["time"][0])
-        ends.append(tel["time"][-1])
+        t0 = float(t[0])
+        t1 = float(t[-1])
 
-    # Global start time is the latest telemetry we have
-    t0 = float(max(starts))
+        if not np.isfinite(t0) or not np.isfinite(t1):
+            continue
+        if t1 <= t0:
+            continue
 
-    # Global end time is the earliest telemetry we have
-    t1 = float(min(ends))
+        starts.append(t0)
+        ends.append(t1)
 
-    # Fixed timestep for FPS
+    if not starts:
+        raise ValueError("No valid driver telemetry ranges found to build timeline.")
+
+    # UNION window
+    t0 = float(min(starts))
+    t1 = float(max(ends))
+
     dt = 1.0 / fps
+    duration = t1 - t0
 
-    # Build timeline from 0 -> (t1 - t0)
-    # We subtract t0 so the replay always starts at t = 0
-    timeline = np.arange(0.0, (t1 - t0) + dt, dt, dtype=np.float64)
+    # If duration is extremely tiny, still build at least 1 frame
+    if duration <= 0:
+        return np.array([0.0], dtype=np.float64), t0, t1
 
+    timeline = np.arange(0.0, duration + dt, dt, dtype=np.float64)
     return timeline, t0, t1
 
 
@@ -159,6 +170,8 @@ def resample_all_drivers(all_driver_tel: dict, timeline: np.ndarray, t0: float):
         out["y"] = _interp_float(t_src, tel["y"], t_abs)
         out["distance"] = _interp_float(t_src, tel["distance"], t_abs)
         out["speed"] = _interp_float(t_src, tel["speed"], t_abs)
+        out["throttle"] = _interp_float(t_src, tel["throttle"], t_abs)
+        out["brake"] = _interp_float(t_src, tel["brake"], t_abs)
 
         # Discrete values -> stepwise
         out["gear"] = _interp_stepwise(t_src, tel["gear"], t_abs).astype(np.int16)

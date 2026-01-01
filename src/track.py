@@ -25,8 +25,8 @@ def get_reference_track_xy(session, driver_code: str = None):
 
     x = tel["X"].to_numpy(dtype=np.float64)
     y = tel["Y"].to_numpy(dtype=np.float64)
-
-    return x, y
+    speed = tel["Speed"].to_numpy(dtype=np.float64)
+    return x, y, speed
 
 
 def compute_bounds(x: np.ndarray, y: np.ndarray, pad: float = 0.0):

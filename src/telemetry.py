@@ -34,6 +34,8 @@ def extract_driver_telemetry(session):
         gears = []
         drs = []
         laps = []
+        throttle = []
+        brake = []
 
         # Looping through each lap
         for _, lap in driver_laps.iterrows():
@@ -52,6 +54,8 @@ def extract_driver_telemetry(session):
                 speeds.append(tel["Speed"].to_numpy())
                 gears.append(tel["nGear"].to_numpy())
                 drs.append(tel["DRS"].to_numpy())
+                throttle.append(tel["Throttle"].to_numpy(dtype=np.float64))
+                brake.append(tel["Brake"].to_numpy(dtype=np.float64))
 
                 # Lap number must be repeated for each telemetry point
                 laps.append(np.full(len(tel), lap["LapNumber"]))
@@ -74,6 +78,8 @@ def extract_driver_telemetry(session):
             "gear": np.concatenate(gears),
             "drs": np.concatenate(drs),
             "lap": np.concatenate(laps),
+            "throttle": np.concatenate(throttle),
+            "brake": np.concatenate(brake),
         }
 
         # Sort telemetry by time (CRITICAL)

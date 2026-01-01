@@ -1,6 +1,7 @@
-# argparse is used to read command line arguments
 import argparse
-from src.colors import driver_code_to_color
+import numpy as np
+import arcade
+
 from src.telemetry import extract_driver_telemetry
 from src.replay_clock import build_global_timeline, resample_all_drivers
 from src.frames import build_frames
@@ -9,53 +10,106 @@ from src.track import (
     get_reference_track_xy,
     compute_bounds,
     build_world_to_screen_transform,
-    world_to_screen,
 )
-import arcade
 from src.arcade_replay import F1ReplayWindow
-
-# Helper functions from f1_data.py
 from src.f1_data import enable_cache, load_session, get_session_info
 
-"""
-Main function - execution starts here
-"""
+
+# ---------------------------
+# TEAM COLORS (EDIT THESE)
+# ---------------------------
+TEAM_COLORS = {
+    "RED_BULL": (0, 47, 108),
+    "FERRARI": (220, 0, 0),
+    "MERCEDES": (0, 210, 190),
+    "MCLAREN": (255, 135, 0),
+    "ASTON_MARTIN": (0, 110, 100),
+    "ALPINE": (0, 120, 255),
+    "WILLIAMS": (0, 90, 255),
+    "RB": (70, 90, 255),
+    "SAUBER": (0, 190, 0),
+    "HAAS": (220, 220, 220),
+}
+
+# Map driver codes -> team (EDIT if needed for your season)
+DRIVER_TEAM = {
+    "VER": "RED_BULL",
+    "PER": "RED_BULL",
+    "LEC": "FERRARI",
+    "SAI": "FERRARI",
+    "HAM": "MERCEDES",
+    "RUS": "MERCEDES",
+    "NOR": "MCLAREN",
+    "PIA": "MCLAREN",
+    "ALO": "ASTON_MARTIN",
+    "STR": "ASTON_MARTIN",
+    "GAS": "ALPINE",
+    "OCO": "ALPINE",
+    "ALB": "WILLIAMS",
+    "SAR": "WILLIAMS",
+    "TSU": "RB",
+    "RIC": "RB",
+    "BOT": "SAUBER",
+    "ZHO": "SAUBER",
+    "MAG": "HAAS",
+    "HUL": "HAAS",
+}
+
+
+def driver_color(drv: str):
+    team = DRIVER_TEAM.get(drv)
+    if team and team in TEAM_COLORS:
+        return TEAM_COLORS[team]
+    return (255, 255, 255)
+
+
+def build_tyre_map(session) -> dict:
+    """
+    tyre_map[DRV_CODE][lap_number] = compound_string
+    Uses session.laps (FastF1).
+    """
+    tyre_map: dict[str, dict[int, str]] = {}
+
+    for driver_number in session.drivers:
+        info = session.get_driver(driver_number)
+        code = info["Abbreviation"]
+
+        laps = session.laps.pick_drivers(driver_number)
+        if laps is None or laps.empty:
+            continue
+
+        if "LapNumber" not in laps.columns or "Compound" not in laps.columns:
+            continue
+
+        dmap: dict[int, str] = {}
+        for _, row in laps.iterrows():
+            try:
+                ln = int(row["LapNumber"])
+                comp = row["Compound"]
+                if comp is not None and str(comp).strip() != "":
+                    dmap[ln] = str(comp)
+            except Exception:
+                continue
+
+        tyre_map[code] = dmap
+
+    return tyre_map
 
 
 def main():
-    # Creating a command line argument parser
     parser = argparse.ArgumentParser()
-
-    # Argument for the season year (default = 2024)
     parser.add_argument("--year", type=int, default=2024)
-
-    # Argument for the race round (default = 1)
     parser.add_argument("--round", type=int, default=1)
-
-    # Argument for session type (default = R)
     parser.add_argument("--session", type=str, default="R")
-
-    # Flag to force FastF1 to reload data instead of using cache
     parser.add_argument("--force", action="store_true")
-
-    # Frames per second for the replay clock (default: 25)
     parser.add_argument("--fps", type=int, default=25)
-
-    # Ignore our computed replay cache and recompute everything
     parser.add_argument("--refresh", action="store_true")
 
-    parser.add_argument("--track-test", action="store_true")
-
-    # Parse the arguments provided by the user
     args = parser.parse_args()
 
-    # enable fastf1 caching (creates folder if needed)
     cache_dir = enable_cache(".fastf1-cache")
-
-    # Printing confirmation so we know cache is active
     print(f"FastF1 cache enabled: {cache_dir}")
 
-    # Try to load our replay cache first unless referesh is required
     cached = None
     if not args.refresh:
         cached = load_replay_cache(args.year, args.round, args.session, args.fps)
@@ -71,16 +125,15 @@ def main():
         print(f"Frames: {len(frames)} at {args.fps} FPS")
         print(f"Duration: {timeline[-1]:.2f} seconds")
 
-    # Otherwise compute everything (slow path)
+        # We still need a session for track + tyre map
+        session = load_session(args.year, args.round, args.session, force_reload=False)
+
     else:
         print("\nCache miss (or --refresh). Computing replay...")
 
-        # Step 2: Load session using FastF1
         session = load_session(
             args.year, args.round, args.session, force_reload=args.force
         )
-
-        # Extract clean metadata
         info = get_session_info(session)
 
         print("\n=== SESSION LOADED ===")
@@ -90,34 +143,40 @@ def main():
         print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
         print(f"Laps loaded: {len(session.laps)}")
 
-        # Step 3: Extract stitched telemetry per driver
         telemetry = extract_driver_telemetry(session)
         print(f"\nTelemetry extracted for {len(telemetry)} drivers")
 
-        # Step 4: Build global replay timeline + resample all drivers onto it
         timeline, t0, t1 = build_global_timeline(telemetry, fps=args.fps)
+
+        print(f"Timeline frames: {len(timeline)} at {args.fps} FPS")
+        if len(timeline) == 0:
+            raise ValueError(
+                "Timeline is empty even after union timeline build. Telemetry may be missing."
+            )
+        print(f"Replay duration: {timeline[-1]:.2f} seconds")
+
         resampled = resample_all_drivers(telemetry, timeline, t0)
+
+        # Lap length estimate
+        try:
+            example_lap = session.laps.pick_fastest()
+            tel = example_lap.get_telemetry()
+            lap_length = float(tel["Distance"].max())
+        except Exception:
+            any_drv = next(iter(resampled.keys()))
+            lap_length = float(np.max(resampled[any_drv]["distance"]))
+
+        tyre_map = build_tyre_map(session)
 
         print("\n=== REPLAY CLOCK BUILT ===")
         print(f"Timeline frames: {len(timeline)} at {args.fps} FPS")
         print(f"Replay duration: {timeline[-1]:.2f} seconds")
 
-        # Step 5: Build per-frame state objects and compute positions
-        frames = build_frames(resampled, timeline)
+        frames = build_frames(resampled, timeline, lap_length, tyre_map=tyre_map)
 
         print("\n=== FRAMES BUILT ===")
         print(f"Total frames: {len(frames)}")
 
-        # Print a few snapshots of the top 5 drivers by position (debug)
-        for idx in [0, len(frames) // 2, len(frames) - 1]:
-            frame = frames[idx]
-            t = frame["t"]
-            ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
-            top5 = ordered[:5]
-            top5_str = ", ".join([f"{drv}(P{st['pos']})" for drv, st in top5])
-            print(f"t={t:.2f}s  Top5: {top5_str}")
-
-        # Step 6: Save our computed replay cache to disk
         meta = {
             "year": args.year,
             "round": args.round,
@@ -129,73 +188,23 @@ def main():
             "drivers": info.drivers,
         }
 
-        cache_path = save_replay_cache(
-            args.year,
-            args.round,
-            args.session,
-            args.fps,
-            meta,
-            timeline,
-            frames,
+        save_replay_cache(
+            args.year, args.round, args.session, args.fps, meta, timeline, frames
         )
 
-    # Step 7: Build reference track and world->screen transform (optional test)
-    if args.track_test:
-        x_track, y_track = get_reference_track_xy(session)  # fastest lap track outline
-        xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
-
-        # Choose a window size that we will use later in Arcade
-        screen_w, screen_h = 1280, 720
-        scale, tx, ty = build_world_to_screen_transform(
-            xmin, xmax, ymin, ymax, screen_w, screen_h
-        )
-
-        print("\n=== TRACK TRANSFORM TEST ===")
-        print(
-            f"World bounds: xmin={xmin:.1f}, xmax={xmax:.1f}, ymin={ymin:.1f}, ymax={ymax:.1f}"
-        )
-        print(f"Transform: scale={scale:.6f}, tx={tx:.2f}, ty={ty:.2f}")
-
-        # Print the first few transformed track points
-        for k in range(5):
-            sx, sy = world_to_screen(
-                float(x_track[k]), float(y_track[k]), scale, tx, ty
-            )
-            print(
-                f"Track point {k}: world=({x_track[k]:.1f},{y_track[k]:.1f}) -> screen=({sx:.1f},{sy:.1f})"
-            )
-
-    # ------------------------------------------------------------
-    # STEP 8: Build track geometry + launch Arcade window
-    # ------------------------------------------------------------
-
-    # If frames were loaded from cache, we may not have a session object yet.
-    # FastF1 cache makes this load fast, so it is safe to do here.
-    if "session" not in locals():
-        session = load_session(args.year, args.round, args.session, force_reload=False)
-
-    # Build reference track polyline from the fastest lap
-    x_track, y_track = get_reference_track_xy(session)
-
-    # Compute world bounds for the track
+    # Track geometry
+    x_track, y_track, _speed_track = get_reference_track_xy(session)
     xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
-    # Window size (used for world->screen transform)
     screen_w, screen_h = 1280, 720
-
-    # Build world-to-screen transform
     scale, tx, ty = build_world_to_screen_transform(
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
 
-    # Build deterministic driver colors
-    driver_colors = {}
+    # Team colors -> driver colors
     sample_frame = frames[0]["drivers"]
+    driver_colors = {drv: driver_color(drv) for drv in sample_frame.keys()}
 
-    for drv in sample_frame.keys():
-        driver_colors[drv] = driver_code_to_color(drv)
-
-    # Launch Arcade replay window
     window = F1ReplayWindow(
         frames=frames,
         track_xy=(x_track, y_track),

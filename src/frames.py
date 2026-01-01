@@ -1,66 +1,107 @@
 import numpy as np
 
 
-def build_frames(resampled: dict, timeline: np.ndarray):
+def _norm_lap_distance(dist: float, lap_length: float) -> float:
     """
-    Convert resampled driver arrays into per-frame state objects
-
-    Args:
-        resampled:
-          dict like:
-            {
-              "VER": {"x": array, "y": array, "distance": array, "speed": array, ...},
-              ...
-            }
-
-        timeline:
-          array of replay times (seconds) of shape (N,)
+    Keep distance within a lap in [0, lap_length).
+    Prevents weird ordering when distance wraps or slightly exceeds lap length.
     """
-    # Number of frames in the replay
+    if lap_length <= 0:
+        return dist
+    return dist % lap_length
+
+
+def build_frames(
+    resampled: dict,
+    timeline: np.ndarray,
+    lap_length: float,
+    tyre_map: dict | None = None,
+):
+    """
+    Build per-frame driver states + compute positions.
+
+    Correct position metric:
+        progress = (lap_i - 1) * lap_length + lap_dist
+    where:
+        lap_dist = distance % lap_length
+
+    This prevents position jitter from lap resets.
+    """
+
     n_frames = len(timeline)
-
-    # List of driver codes available in resampled data
     drivers = list(resampled.keys())
 
-    x_by_driver = {drv: resampled[drv]["x"] for drv in drivers}
-    y_by_driver = {drv: resampled[drv]["y"] for drv in drivers}
-    speed_by_driver = {drv: resampled[drv]["speed"] for drv in drivers}
-    dist_by_driver = {drv: resampled[drv]["distance"] for drv in drivers}
-    lap_by_driver = {drv: resampled[drv]["lap"] for drv in drivers}
-    gear_by_driver = {drv: resampled[drv]["gear"] for drv in drivers}
-    drs_by_driver = {drv: resampled[drv]["drs"] for drv in drivers}
+    # Pull arrays once (faster)
+    x_by = {d: resampled[d]["x"] for d in drivers}
+    y_by = {d: resampled[d]["y"] for d in drivers}
+    speed_by = {d: resampled[d]["speed"] for d in drivers}
+    dist_by = {d: resampled[d]["distance"] for d in drivers}
+    lap_by = {d: resampled[d]["lap"] for d in drivers}
+    gear_by = {d: resampled[d]["gear"] for d in drivers}
+    drs_by = {d: resampled[d]["drs"] for d in drivers}
 
-    # Pre-allocate a list to store each frame's state
+    # Optional (only if you resampled them)
+    throttle_by = {d: resampled[d].get("throttle", None) for d in drivers}
+    brake_by = {d: resampled[d].get("brake", None) for d in drivers}
+
     frames = []
 
-    # Looping through each time index in the replay timeline
     for i in range(n_frames):
-        # Current replay time in seconds
         t = float(timeline[i])
 
-        # Build list of (driver,distance) for ordering
-        dist_list = [(drv, float(dist_by_driver[drv][i])) for drv in drivers]
+        # Build progress list used to rank drivers at this frame
+        progress_list = []
+        lap_i_map = {}
 
-        # Sort drivers by distance descending (largest distance -> ahead)
-        dist_list.sort(key=lambda x: x[1], reverse=True)
+        for d in drivers:
+            lap_i = int(lap_by[d][i])
+            if lap_i < 1:
+                lap_i = 1
+            lap_i_map[d] = lap_i
 
-        # Assign positions based on sorted order
-        positions = {drv: pos for pos, (drv, _) in enumerate(dist_list, start=1)}
+            dist_i = float(dist_by[d][i])
+            lap_dist = _norm_lap_distance(dist_i, lap_length)
+            progress = float((lap_i - 1) * lap_length + lap_dist)
 
-        # Build driver state dict for this frame
+            progress_list.append((d, progress))
+
+        # Leader first
+        progress_list.sort(key=lambda x: x[1], reverse=True)
+
+        # Position mapping + progress mapping
+        positions = {drv: pos for pos, (drv, _) in enumerate(progress_list, start=1)}
+        prog_map = {drv: prog for drv, prog in progress_list}
+
         driver_states = {}
 
-        for drv in drivers:
-            driver_states[drv] = {
-                "x": float(x_by_driver[drv][i]),
-                "y": float(y_by_driver[drv][i]),
-                "speed": float(speed_by_driver[drv][i]),
-                "distance": float(dist_by_driver[drv][i]),
-                "lap": int(lap_by_driver[drv][i]),
-                "gear": int(gear_by_driver[drv][i]),
-                "drs": int(drs_by_driver[drv][i]),
-                "pos": int(positions[drv]),
+        for d in drivers:
+            lap_i = lap_i_map[d]
+
+            # Tyre compound lookup by current lap
+            compound = None
+            if tyre_map is not None:
+                compound = tyre_map.get(d, {}).get(lap_i, None)
+
+            st = {
+                "x": float(x_by[d][i]),
+                "y": float(y_by[d][i]),
+                "speed": float(speed_by[d][i]),
+                "distance": float(dist_by[d][i]),
+                "lap": int(lap_i),
+                "gear": int(gear_by[d][i]),
+                "drs": int(drs_by[d][i]),
+                "progress": float(prog_map[d]),
+                "pos": int(positions[d]),
+                "compound": compound,  # NEW
             }
+
+            if throttle_by[d] is not None:
+                st["throttle"] = float(throttle_by[d][i])
+
+            if brake_by[d] is not None:
+                st["brake"] = float(brake_by[d][i])
+
+            driver_states[d] = st
 
         frames.append({"t": t, "drivers": driver_states})
 
