@@ -41,8 +41,8 @@ class F1ReplayWindow(arcade.Window):
         transform,
         driver_colors=None,
         fps=25,
-        width=1400,
-        height=800,
+        width=1280,
+        height=720,
         title="F1 Replay",
     ):
         super().__init__(width, height, title)
@@ -87,9 +87,9 @@ class F1ReplayWindow(arcade.Window):
         # ---------------------------
         # Leaderboard layout (right)
         # ---------------------------
-        self.lb_w = 360
+        self.lb_w = 280
         self.lb_h = self.height - 140
-        self.lb_x = self.width - self.lb_w - 24
+        self.lb_x = self.width - self.lb_w - 16
         self.lb_y = 90
 
         self.lb_padding = 14
@@ -275,17 +275,22 @@ class F1ReplayWindow(arcade.Window):
             2,
         )
 
+        # Order by position (P1..)
         ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
 
         # Default selection = leader
         if self.selected_driver is None and ordered:
             self.selected_driver = ordered[0][0]
 
+        # Lap header
         leader_lap = int(ordered[0][1].get("lap", 0)) if ordered else 0
         max_lap = max(int(st.get("lap", 0)) for _, st in ordered) if ordered else 0
-
         self.lb_title.text = f"Leaderboard   Lap {leader_lap}/{max_lap}"
         self.lb_title.draw()
+
+        # Precompute progress + speed lists matching the ordered list (for interval gaps)
+        prog_list = [float(st.get("progress", 0.0)) for _, st in ordered]
+        spd_list_kmh = [float(st.get("speed", 0.0)) for _, st in ordered]
 
         # Build row rects for click detection
         self._lb_rects = []
@@ -293,14 +298,16 @@ class F1ReplayWindow(arcade.Window):
         # Row start (top anchor)
         top_y = self.lb_y + self.lb_h - self.lb_title_h - 8
 
-        # Columns
+        # Columns (tuned for narrower leaderboard)
         x_text = self.lb_x + self.lb_padding
-        x_drs = self.lb_x + self.lb_w - 26
+        x_gap = self.lb_x + self.lb_w - 108  # NEW: interval column (right-aligned)
         x_tyre = self.lb_x + self.lb_w - 64
+        x_drs = self.lb_x + self.lb_w - 26
 
         for idx, (drv, st) in enumerate(ordered[:20]):
             row_top = top_y - idx * self.lb_row_h
             row_bottom = row_top - self.lb_row_h
+            row_cy = (row_top + row_bottom) / 2
 
             # Save click rect
             self._lb_rects.append(
@@ -311,7 +318,7 @@ class F1ReplayWindow(arcade.Window):
             if self.hover_index == idx:
                 rect = arcade.XYWH(
                     (self.lb_x + self.lb_x + self.lb_w) / 2,
-                    (row_top + row_bottom) / 2,
+                    row_cy,
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
@@ -321,7 +328,7 @@ class F1ReplayWindow(arcade.Window):
             if self.selected_driver == drv:
                 rect = arcade.XYWH(
                     (self.lb_x + self.lb_x + self.lb_w) / 2,
-                    (row_top + row_bottom) / 2,
+                    row_cy,
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
@@ -335,13 +342,40 @@ class F1ReplayWindow(arcade.Window):
             self.lb_rows[idx].color = col
             self.lb_rows[idx].draw()
 
+            # Interval gap to car ahead (seconds), using avg speed of (ahead + this)
+            if idx == 0:
+                gap_str = "—"
+            else:
+                gap_m = max(0.0, prog_list[idx - 1] - prog_list[idx])
+
+                spd_ahead_mps = max(spd_list_kmh[idx - 1] / 3.6, 1.0)
+                spd_this_mps = max(spd_list_kmh[idx] / 3.6, 1.0)
+                avg_speed_mps = max(0.5 * (spd_ahead_mps + spd_this_mps), 1.0)
+
+                gap_s = gap_m / avg_speed_mps
+
+                # Optional: avoid ugly "+0.0" flicker
+                # if gap_s < 0.05:
+                #     gap_s = 0.0
+
+                gap_str = f"+{gap_s:.1f}"
+
+            arcade.draw_text(
+                gap_str,
+                x_gap,
+                row_cy - 7,
+                arcade.color.LIGHT_GRAY,
+                12,
+                anchor_x="right",
+            )
+
             # Tyre icon
             key = _compound_key(st.get("compound", None))
             tex = self.tyre_textures.get(key) or self.tyre_textures.get("unknown")
             if tex is not None:
                 rect = arcade.XYWH(
                     x_tyre,
-                    (row_top + row_bottom) / 2,
+                    row_cy,
                     self.tyre_icon_size,
                     self.tyre_icon_size,
                 )
@@ -350,7 +384,7 @@ class F1ReplayWindow(arcade.Window):
             # DRS indicator dot
             drs_on = _drs_is_active(int(st.get("drs", 0)))
             drs_col = arcade.color.LIME_GREEN if drs_on else arcade.color.DARK_GRAY
-            arcade.draw_circle_filled(x_drs, (row_top + row_bottom) / 2, 5, drs_col)
+            arcade.draw_circle_filled(x_drs, row_cy, 5, drs_col)
 
         # Clear unused rows
         for j in range(len(ordered), 20):
