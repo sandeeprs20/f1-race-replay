@@ -15,92 +15,78 @@ from src.arcade_replay import F1ReplayWindow
 from src.f1_data import enable_cache, load_session, get_session_info
 
 
-# ---------------------------
-# TEAM COLORS (EDIT THESE)
-# ---------------------------
+# ------------------------------------------------------------
+# Team color mapping (EDIT THESE)
+# Use driver code -> (R,G,B) or arcade.color.*
+# ------------------------------------------------------------
 TEAM_COLORS = {
-    "RED_BULL": (0, 47, 108),
-    "FERRARI": (220, 0, 0),
-    "MERCEDES": (0, 210, 190),
-    "MCLAREN": (255, 135, 0),
-    "ASTON_MARTIN": (0, 110, 100),
-    "ALPINE": (0, 120, 255),
-    "WILLIAMS": (0, 90, 255),
-    "RB": (70, 90, 255),
-    "SAUBER": (0, 190, 0),
-    "HAAS": (220, 220, 220),
-}
-
-# Map driver codes -> team (EDIT if needed for your season)
-DRIVER_TEAM = {
-    "VER": "RED_BULL",
-    "PER": "RED_BULL",
-    "LEC": "FERRARI",
-    "SAI": "FERRARI",
-    "HAM": "MERCEDES",
-    "RUS": "MERCEDES",
-    "NOR": "MCLAREN",
-    "PIA": "MCLAREN",
-    "ALO": "ASTON_MARTIN",
-    "STR": "ASTON_MARTIN",
-    "GAS": "ALPINE",
-    "OCO": "ALPINE",
-    "ALB": "WILLIAMS",
-    "SAR": "WILLIAMS",
-    "TSU": "RB",
-    "RIC": "RB",
-    "BOT": "SAUBER",
-    "ZHO": "SAUBER",
-    "MAG": "HAAS",
-    "HUL": "HAAS",
+    # Example:
+    # "VER": (37, 82, 255),
+    # "PER": (37, 82, 255),
+    # "HAM": (0, 255, 200),
 }
 
 
-def driver_color(drv: str):
-    team = DRIVER_TEAM.get(drv)
-    if team and team in TEAM_COLORS:
-        return TEAM_COLORS[team]
-    return (255, 255, 255)
-
-
-def build_tyre_map(session) -> dict:
+def build_driver_colors(drivers):
     """
-    tyre_map[DRV_CODE][lap_number] = compound_string
-    Uses session.laps (FastF1).
+    Build driver colors. Priority:
+      1) TEAM_COLORS override (by driver code)
+      2) fallback deterministic color (simple hash)
     """
-    tyre_map: dict[str, dict[int, str]] = {}
+    out = {}
+    for d in drivers:
+        if d in TEAM_COLORS:
+            out[d] = TEAM_COLORS[d]
+        else:
+            # deterministic fallback
+            h = abs(hash(d)) % 255
+            out[d] = (80 + (h % 120), 80 + ((h * 3) % 120), 80 + ((h * 7) % 120))
+    return out
 
-    for driver_number in session.drivers:
-        info = session.get_driver(driver_number)
-        code = info["Abbreviation"]
 
-        laps = session.laps.pick_drivers(driver_number)
+def build_tyre_map(session):
+    """
+    Build tyre map:
+      tyre_map[driver_code][lap_number] = compound string
+    Uses FastF1 laps columns: 'LapNumber' and 'Compound' (when available).
+    """
+    tyre_map = {}
+
+    try:
+        laps = session.laps
         if laps is None or laps.empty:
-            continue
+            return tyre_map
 
-        if "LapNumber" not in laps.columns or "Compound" not in laps.columns:
-            continue
-
-        dmap: dict[int, str] = {}
+        # Expect columns: Driver, LapNumber, Compound
         for _, row in laps.iterrows():
+            drv = row.get("Driver", None)
+            lap_no = row.get("LapNumber", None)
+            comp = row.get("Compound", None)
+
+            if drv is None or lap_no is None:
+                continue
+
             try:
-                ln = int(row["LapNumber"])
-                comp = row["Compound"]
-                if comp is not None and str(comp).strip() != "":
-                    dmap[ln] = str(comp)
+                lap_i = int(lap_no)
             except Exception:
                 continue
 
-        tyre_map[code] = dmap
+            tyre_map.setdefault(str(drv), {})[lap_i] = (
+                None if comp is None else str(comp)
+            )
+    except Exception:
+        return tyre_map
 
     return tyre_map
 
 
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument("--year", type=int, default=2024)
     parser.add_argument("--round", type=int, default=1)
-    parser.add_argument("--session", type=str, default="R")
+    parser.add_argument("--session", type=str, default="Q")
+
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--refresh", action="store_true")
@@ -110,9 +96,15 @@ def main():
     cache_dir = enable_cache(".fastf1-cache")
     print(f"FastF1 cache enabled: {cache_dir}")
 
+    # Try computed replay cache first
     cached = None
     if not args.refresh:
         cached = load_replay_cache(args.year, args.round, args.session, args.fps)
+
+    session = None
+    info = None
+    timeline = None
+    frames = None
 
     if cached is not None:
         print("\nCache hit! Loaded replay from computed_data.")
@@ -125,8 +117,9 @@ def main():
         print(f"Frames: {len(frames)} at {args.fps} FPS")
         print(f"Duration: {timeline[-1]:.2f} seconds")
 
-        # We still need a session for track + tyre map
+        # Need session for track + tyre map (FastF1 cache makes this fast)
         session = load_session(args.year, args.round, args.session, force_reload=False)
+        info = get_session_info(session)
 
     else:
         print("\nCache miss (or --refresh). Computing replay...")
@@ -146,18 +139,17 @@ def main():
         telemetry = extract_driver_telemetry(session)
         print(f"\nTelemetry extracted for {len(telemetry)} drivers")
 
+        # Build timeline + resample
         timeline, t0, t1 = build_global_timeline(telemetry, fps=args.fps)
 
-        print(f"Timeline frames: {len(timeline)} at {args.fps} FPS")
         if len(timeline) == 0:
             raise ValueError(
-                "Timeline is empty even after union timeline build. Telemetry may be missing."
+                "Timeline is empty. Fix replay_clock.build_global_timeline to use min(starts) and max(ends)."
             )
-        print(f"Replay duration: {timeline[-1]:.2f} seconds")
 
         resampled = resample_all_drivers(telemetry, timeline, t0)
 
-        # Lap length estimate
+        # Lap length estimate (best effort)
         try:
             example_lap = session.laps.pick_fastest()
             tel = example_lap.get_telemetry()
@@ -166,11 +158,12 @@ def main():
             any_drv = next(iter(resampled.keys()))
             lap_length = float(np.max(resampled[any_drv]["distance"]))
 
-        tyre_map = build_tyre_map(session)
-
         print("\n=== REPLAY CLOCK BUILT ===")
         print(f"Timeline frames: {len(timeline)} at {args.fps} FPS")
         print(f"Replay duration: {timeline[-1]:.2f} seconds")
+        print(f"Lap length estimate: {lap_length:.2f} m")
+
+        tyre_map = build_tyre_map(session)
 
         frames = build_frames(resampled, timeline, lap_length, tyre_map=tyre_map)
 
@@ -188,9 +181,10 @@ def main():
             "drivers": info.drivers,
         }
 
-        save_replay_cache(
+        cache_path = save_replay_cache(
             args.year, args.round, args.session, args.fps, meta, timeline, frames
         )
+        print(f"\nSaved replay cache to: {cache_path}")
 
     # Track geometry
     x_track, y_track, _speed_track = get_reference_track_xy(session)
@@ -201,9 +195,7 @@ def main():
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
 
-    # Team colors -> driver colors
-    sample_frame = frames[0]["drivers"]
-    driver_colors = {drv: driver_color(drv) for drv in sample_frame.keys()}
+    driver_colors = build_driver_colors(frames[0]["drivers"].keys())
 
     window = F1ReplayWindow(
         frames=frames,

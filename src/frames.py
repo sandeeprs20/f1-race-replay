@@ -20,18 +20,19 @@ def build_frames(
     """
     Build per-frame driver states + compute positions.
 
-    Correct position metric:
-        progress = (lap_i - 1) * lap_length + lap_dist
-    where:
-        lap_dist = distance % lap_length
+    Correct position metric (robust across lap resets):
+        progress = (lap_i - 1) * lap_length + (distance % lap_length)
 
-    This prevents position jitter from lap resets.
+    Args:
+        resampled: dict[drv] -> arrays (x,y,distance,speed,lap,gear,drs,throttle,brake,...)
+        timeline: replay time axis (seconds), shape (N,)
+        lap_length: estimated lap length in meters
+        tyre_map: dict[drv][lap_number] -> compound string (e.g., "SOFT", "MEDIUM", ...)
     """
-
     n_frames = len(timeline)
     drivers = list(resampled.keys())
 
-    # Pull arrays once (faster)
+    # Pull arrays once (faster than indexing dict repeatedly)
     x_by = {d: resampled[d]["x"] for d in drivers}
     y_by = {d: resampled[d]["y"] for d in drivers}
     speed_by = {d: resampled[d]["speed"] for d in drivers}
@@ -40,7 +41,6 @@ def build_frames(
     gear_by = {d: resampled[d]["gear"] for d in drivers}
     drs_by = {d: resampled[d]["drs"] for d in drivers}
 
-    # Optional (only if you resampled them)
     throttle_by = {d: resampled[d].get("throttle", None) for d in drivers}
     brake_by = {d: resampled[d].get("brake", None) for d in drivers}
 
@@ -49,15 +49,12 @@ def build_frames(
     for i in range(n_frames):
         t = float(timeline[i])
 
-        # Build progress list used to rank drivers at this frame
+        # Compute progress for ordering
         progress_list = []
-        lap_i_map = {}
-
         for d in drivers:
             lap_i = int(lap_by[d][i])
             if lap_i < 1:
                 lap_i = 1
-            lap_i_map[d] = lap_i
 
             dist_i = float(dist_by[d][i])
             lap_dist = _norm_lap_distance(dist_i, lap_length)
@@ -65,19 +62,19 @@ def build_frames(
 
             progress_list.append((d, progress))
 
-        # Leader first
+        # Sort leader first
         progress_list.sort(key=lambda x: x[1], reverse=True)
 
-        # Position mapping + progress mapping
         positions = {drv: pos for pos, (drv, _) in enumerate(progress_list, start=1)}
         prog_map = {drv: prog for drv, prog in progress_list}
 
         driver_states = {}
 
         for d in drivers:
-            lap_i = lap_i_map[d]
+            lap_i = int(lap_by[d][i])
+            if lap_i < 1:
+                lap_i = 1
 
-            # Tyre compound lookup by current lap
             compound = None
             if tyre_map is not None:
                 compound = tyre_map.get(d, {}).get(lap_i, None)
@@ -92,12 +89,12 @@ def build_frames(
                 "drs": int(drs_by[d][i]),
                 "progress": float(prog_map[d]),
                 "pos": int(positions[d]),
-                "compound": compound,  # NEW
+                "compound": compound,  # used by leaderboard tyre icons
             }
 
+            # Optional inputs
             if throttle_by[d] is not None:
                 st["throttle"] = float(throttle_by[d][i])
-
             if brake_by[d] is not None:
                 st["brake"] = float(brake_by[d][i])
 

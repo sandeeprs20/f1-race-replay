@@ -1,27 +1,36 @@
+import os
 import arcade
 from src.track import world_to_screen
 
 
-def _short_compound(compound: str | None) -> str:
+def _compound_key(compound: str | None) -> str:
     """
-    Convert FastF1 compound strings to short labels.
-    Examples: SOFT->S, MEDIUM->M, HARD->H, INTERMEDIATE->I, WET->W
+    Normalize FastF1 compound strings to our tyre texture keys.
     """
     if not compound:
-        return "-"
+        return "unknown"
     c = compound.strip().upper()
     if c.startswith("SOFT"):
-        return "S"
+        return "soft"
     if c.startswith("MED"):
-        return "M"
+        return "medium"
     if c.startswith("HARD"):
-        return "H"
+        return "hard"
     if c.startswith("INTER"):
-        return "I"
+        return "intermediate"
     if c.startswith("WET"):
-        return "W"
-    # fallback: first letter
-    return c[:1]
+        return "wet"
+    return "unknown"
+
+
+def _drs_is_active(drs_val: int) -> bool:
+    """
+    FastF1 DRS values often use >=10 to mean open/active (common convention in telemetry streams).
+    """
+    try:
+        return int(drs_val) >= 10
+    except Exception:
+        return False
 
 
 class F1ReplayWindow(arcade.Window):
@@ -32,8 +41,8 @@ class F1ReplayWindow(arcade.Window):
         transform,
         driver_colors=None,
         fps=25,
-        width=1280,
-        height=720,
+        width=1400,
+        height=800,
         title="F1 Replay",
     ):
         super().__init__(width, height, title)
@@ -43,7 +52,7 @@ class F1ReplayWindow(arcade.Window):
 
         self.track_x, self.track_y = track_xy
 
-        # Avoid "self.scale" collision (Arcade has a read-only property named scale)
+        # Avoid "self.scale" name collision with Arcade Window properties
         self.world_scale, self.world_tx, self.world_ty = transform
 
         self.driver_colors = driver_colors or {}
@@ -52,7 +61,7 @@ class F1ReplayWindow(arcade.Window):
         # Playback state
         self.frame_idx = 0.0
         self.paused = False
-        self.speed_choices = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
+        self.speed_choices = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
         self.speed_i = 1
 
         arcade.set_background_color(arcade.color.BLACK)
@@ -65,7 +74,7 @@ class F1ReplayWindow(arcade.Window):
             )
             self.track_pts_screen.append((sx, sy))
 
-        # HUD text objects (fast vs draw_text)
+        # HUD text
         self.hud_text = arcade.Text("", 20, self.height - 30, arcade.color.WHITE, 14)
         self.help_text = arcade.Text(
             "Controls: Space=Pause  Up/Down=Speed  Left/Right=Seek  R=Restart",
@@ -76,16 +85,16 @@ class F1ReplayWindow(arcade.Window):
         )
 
         # ---------------------------
-        # Leaderboard panel layout
+        # Leaderboard layout (right)
         # ---------------------------
-        self.lb_w = 320
+        self.lb_w = 360
         self.lb_h = self.height - 140
-        self.lb_x = self.width - self.lb_w - 30
-        self.lb_y = 70
+        self.lb_x = self.width - self.lb_w - 24
+        self.lb_y = 90
 
         self.lb_padding = 14
         self.lb_title_h = 34
-        self.lb_row_h = 24
+        self.lb_row_h = 26
 
         self.hover_index = None
         self.selected_driver = None
@@ -93,37 +102,82 @@ class F1ReplayWindow(arcade.Window):
         self.lb_title = arcade.Text(
             "Leaderboard",
             self.lb_x + self.lb_padding,
-            self.lb_y + self.lb_h - self.lb_title_h,
+            self.lb_y + self.lb_h - 10,
             arcade.color.WHITE,
             16,
+            anchor_x="left",
+            anchor_y="top",
         )
 
-        # Pre-create row text objects (20 drivers max)
+        # We’ll reuse these text objects (positions updated each draw)
         self.lb_rows = [
-            arcade.Text("", 0, 0, arcade.color.WHITE, 14) for _ in range(20)
+            arcade.Text(
+                "",
+                0,
+                0,
+                arcade.color.WHITE,
+                14,
+                anchor_x="left",
+                anchor_y="top",
+            )
+            for _ in range(20)
         ]
 
         # ---------------------------
-        # Telemetry panel (left)
+        # Tyre textures (images/tyres)
         # ---------------------------
-        self.tel_w = 360
-        self.tel_h = 260
-        self.tel_x = 30
+        base_dir = os.path.dirname(os.path.dirname(__file__))  # project root
+        tyres_dir = os.path.join(base_dir, "images", "tyres")
+
+        tyre_files = {
+            "soft": "soft.png",
+            "medium": "medium.png",
+            "hard": "hard.png",
+            "intermediate": "intermediate.png",
+            "wet": "wet.png",
+            "unknown": "unknown.png",
+        }
+
+        self.tyre_textures = {}
+        for key, fname in tyre_files.items():
+            path = os.path.join(tyres_dir, fname)
+            if os.path.exists(path):
+                self.tyre_textures[key] = arcade.load_texture(path)
+
+        self.tyre_icon_size = 16  # px
+
+        # ---------------------------
+        # Telemetry panel (left) — smaller so it doesn't cover track
+        # ---------------------------
+        self.tel_w = 220
+        self.tel_h = 200
+        self.tel_x = 16
         self.tel_y = self.height - self.tel_h - 60
 
         self.tel_title = arcade.Text(
-            "", self.tel_x + 12, self.tel_y + self.tel_h - 32, arcade.color.WHITE, 16
+            "",
+            self.tel_x + 10,
+            self.tel_y + self.tel_h - 10,
+            arcade.color.WHITE,
+            14,
+            anchor_x="left",
+            anchor_y="top",
         )
         self.tel_lines = [
             arcade.Text(
                 "",
-                self.tel_x + 12,
-                self.tel_y + self.tel_h - 62 - i * 20,
+                self.tel_x + 10,
+                self.tel_y + self.tel_h - 36 - i * 18,
                 arcade.color.LIGHT_GRAY,
-                12,
+                11,
+                anchor_x="left",
+                anchor_y="top",
             )
-            for i in range(9)
+            for i in range(8)
         ]
+
+        # Click rects for leaderboard rows (rebuilt each draw)
+        self._lb_rects = []
 
     # ---------------------------
     # Playback
@@ -133,6 +187,7 @@ class F1ReplayWindow(arcade.Window):
             return
 
         self.frame_idx += self.speed_choices[self.speed_i]
+
         if self.frame_idx >= self.n_frames - 1:
             self.frame_idx = self.n_frames - 1
             self.paused = True
@@ -153,27 +208,15 @@ class F1ReplayWindow(arcade.Window):
 
         frame = self.frames[int(self.frame_idx)]
         ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+
         if 0 <= idx < len(ordered):
             self.selected_driver = ordered[idx][0]
 
     def _leaderboard_row_at(self, x: float, y: float):
-        if not (
-            self.lb_x <= x <= self.lb_x + self.lb_w
-            and self.lb_y <= y <= self.lb_y + self.lb_h
-        ):
-            return None
-
-        # Row area starts below title
-        row_top = self.lb_y + self.lb_h - self.lb_title_h - 8
-        row_bottom = self.lb_y + self.lb_padding
-
-        if y > row_top or y < row_bottom:
-            return None
-
-        idx = int((row_top - y) / self.lb_row_h)
-        if idx < 0 or idx >= 20:
-            return None
-        return idx
+        for idx, (l, b, r, t) in enumerate(self._lb_rects):
+            if l <= x <= r and b <= y <= t:
+                return idx
+        return None
 
     # ---------------------------
     # Drawing
@@ -183,7 +226,7 @@ class F1ReplayWindow(arcade.Window):
 
         frame = self.frames[int(self.frame_idx)]
 
-        # Track style (thick base + thin highlight)
+        # Track look (thick base + thin highlight)
         if len(self.track_pts_screen) >= 2:
             arcade.draw_line_strip(self.track_pts_screen, arcade.color.DIM_GRAY, 10)
             arcade.draw_line_strip(self.track_pts_screen, arcade.color.LIGHT_GRAY, 2)
@@ -210,20 +253,18 @@ class F1ReplayWindow(arcade.Window):
         self.hud_text.draw()
         self.help_text.draw()
 
-        # Leaderboard panel
+        # UI panels
         self._draw_leaderboard(frame)
-
-        # Telemetry panel (selected driver)
         self._draw_telemetry_panel(frame)
 
     def _draw_leaderboard(self, frame):
-        # Background + border
+        # Panel background
         arcade.draw_lrbt_rectangle_filled(
             self.lb_x,
             self.lb_x + self.lb_w,
             self.lb_y,
             self.lb_y + self.lb_h,
-            (20, 20, 20, 220),
+            (18, 18, 18, 225),
         )
         arcade.draw_lrbt_rectangle_outline(
             self.lb_x,
@@ -236,88 +277,99 @@ class F1ReplayWindow(arcade.Window):
 
         ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
 
-        # Default selection to leader
-        if self.selected_driver is None and len(ordered) > 0:
+        # Default selection = leader
+        if self.selected_driver is None and ordered:
             self.selected_driver = ordered[0][0]
 
-        # Lap count (leader lap vs max lap visible)
         leader_lap = int(ordered[0][1].get("lap", 0)) if ordered else 0
         max_lap = max(int(st.get("lap", 0)) for _, st in ordered) if ordered else 0
+
         self.lb_title.text = f"Leaderboard   Lap {leader_lap}/{max_lap}"
         self.lb_title.draw()
 
-        # Rows region
-        row_top = self.lb_y + self.lb_h - self.lb_title_h - 10
+        # Build row rects for click detection
+        self._lb_rects = []
 
-        # Column positions inside panel
-        x_pos = self.lb_x + self.lb_padding
-        x_code = x_pos + 70
-        x_tyre = self.lb_x + self.lb_w - 70
-        x_drs = self.lb_x + self.lb_w - 28
+        # Row start (top anchor)
+        top_y = self.lb_y + self.lb_h - self.lb_title_h - 8
+
+        # Columns
+        x_text = self.lb_x + self.lb_padding
+        x_drs = self.lb_x + self.lb_w - 26
+        x_tyre = self.lb_x + self.lb_w - 64
 
         for idx, (drv, st) in enumerate(ordered[:20]):
-            y = row_top - (idx + 1) * self.lb_row_h
+            row_top = top_y - idx * self.lb_row_h
+            row_bottom = row_top - self.lb_row_h
+
+            # Save click rect
+            self._lb_rects.append(
+                (self.lb_x + 6, row_bottom, self.lb_x + self.lb_w - 6, row_top)
+            )
 
             # Hover highlight
             if self.hover_index == idx:
-                arcade.draw_lrbt_rectangle_filled(
-                    self.lb_x + 6,
-                    self.lb_x + self.lb_w - 6,
-                    y - 2,
-                    y + self.lb_row_h - 2,
-                    (255, 255, 255, 25),
+                rect = arcade.XYWH(
+                    (self.lb_x + self.lb_x + self.lb_w) / 2,
+                    (row_top + row_bottom) / 2,
+                    self.lb_w - 12,
+                    self.lb_row_h - 2,
                 )
+                arcade.draw_rect_filled(rect, (255, 255, 255, 25))
 
             # Selected highlight
             if self.selected_driver == drv:
-                arcade.draw_lrbt_rectangle_filled(
-                    self.lb_x + 6,
-                    self.lb_x + self.lb_w - 6,
-                    y - 2,
-                    y + self.lb_row_h - 2,
-                    (255, 255, 255, 45),
+                rect = arcade.XYWH(
+                    (self.lb_x + self.lb_x + self.lb_w) / 2,
+                    (row_top + row_bottom) / 2,
+                    self.lb_w - 12,
+                    self.lb_row_h - 2,
                 )
+                arcade.draw_rect_filled(rect, (255, 255, 255, 45))
 
-            # Text row: " 1. VER"
+            # Driver text
             col = self.driver_colors.get(drv, arcade.color.WHITE)
             self.lb_rows[idx].text = f"{int(st['pos']):>2}. {drv}"
-            self.lb_rows[idx].x = x_pos
-            self.lb_rows[idx].y = y
+            self.lb_rows[idx].x = x_text
+            self.lb_rows[idx].y = row_top - 4
             self.lb_rows[idx].color = col
             self.lb_rows[idx].draw()
 
-            # Tyre compound label
-            comp = _short_compound(st.get("compound", None))
-            arcade.draw_text(
-                comp,
-                x_tyre,
-                y,
-                col,
-                14,
-            )
+            # Tyre icon
+            key = _compound_key(st.get("compound", None))
+            tex = self.tyre_textures.get(key) or self.tyre_textures.get("unknown")
+            if tex is not None:
+                rect = arcade.XYWH(
+                    x_tyre,
+                    (row_top + row_bottom) / 2,
+                    self.tyre_icon_size,
+                    self.tyre_icon_size,
+                )
+                arcade.draw_texture_rect(rect=rect, texture=tex, angle=0, alpha=255)
 
             # DRS indicator dot
-            drs_on = int(st.get("drs", 0)) == 1
-            drs_color = arcade.color.LIME_GREEN if drs_on else arcade.color.DARK_GRAY
-            arcade.draw_circle_filled(x_drs, y + 8, 5, drs_color)
+            drs_on = _drs_is_active(int(st.get("drs", 0)))
+            drs_col = arcade.color.LIME_GREEN if drs_on else arcade.color.DARK_GRAY
+            arcade.draw_circle_filled(x_drs, (row_top + row_bottom) / 2, 5, drs_col)
 
-        # Clear unused row texts
+        # Clear unused rows
         for j in range(len(ordered), 20):
             self.lb_rows[j].text = ""
 
     def _draw_telemetry_panel(self, frame):
-        if self.selected_driver is None or self.selected_driver not in frame["drivers"]:
+        if self.selected_driver is None:
+            return
+        if self.selected_driver not in frame["drivers"]:
             return
 
         st = frame["drivers"][self.selected_driver]
 
-        # Panel bg
         arcade.draw_lrbt_rectangle_filled(
             self.tel_x,
             self.tel_x + self.tel_w,
             self.tel_y,
             self.tel_y + self.tel_h,
-            (20, 20, 20, 220),
+            (18, 18, 18, 225),
         )
         arcade.draw_lrbt_rectangle_outline(
             self.tel_x,
@@ -328,7 +380,7 @@ class F1ReplayWindow(arcade.Window):
             2,
         )
 
-        self.tel_title.text = f"Driver: {self.selected_driver}"
+        self.tel_title.text = f"{self.selected_driver}"
         self.tel_title.draw()
 
         speed = float(st.get("speed", 0.0))
@@ -336,31 +388,27 @@ class F1ReplayWindow(arcade.Window):
         drs = int(st.get("drs", 0))
         lap = int(st.get("lap", 0))
         pos = int(st.get("pos", 0))
-        comp = _short_compound(st.get("compound", None))
 
         throttle = st.get("throttle", None)
         brake = st.get("brake", None)
 
+        comp = st.get("compound", None)
+        comp_key = _compound_key(comp).upper()
+
         lines = [
-            f"Position: {pos}",
-            f"Lap: {lap}",
-            f"Tyre: {comp}",
-            f"Speed: {speed:.1f} km/h",
+            f"P{pos}   Lap {lap}",
+            f"Speed: {speed:.0f} km/h",
             f"Gear: {gear}",
-            f"DRS: {'ON' if drs == 1 else 'OFF'}",
-            f"Throttle: {float(throttle):.0f}%"
-            if throttle is not None
-            else "Throttle: -",
-            f"Brake: {float(brake):.0f}%" if brake is not None else "Brake: -",
+            f"DRS: {'ON' if _drs_is_active(drs) else 'OFF'}",
+            f"Tyre: {comp_key}",
+            f"Thr: {float(throttle):.0f}%" if throttle is not None else "Thr: -",
+            f"Brk: {float(brake):.0f}%" if brake is not None else "Brk: -",
         ]
 
         for i, text in enumerate(lines[: len(self.tel_lines)]):
             self.tel_lines[i].text = text
             self.tel_lines[i].draw()
 
-    # ---------------------------
-    # Keyboard
-    # ---------------------------
     def on_key_press(self, symbol: int, modifiers: int):
         if symbol == arcade.key.SPACE:
             self.paused = not self.paused
