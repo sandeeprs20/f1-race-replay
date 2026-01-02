@@ -205,7 +205,7 @@ def main():
     xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
     # Use larger window size (close to fullscreen)
-    screen_w, screen_h = 1230, 700
+    screen_w, screen_h = 1400, 700
 
     scale, tx, ty = build_world_to_screen_transform(
         xmin, xmax, ymin, ymax, screen_w, screen_h

@@ -98,7 +98,7 @@ class F1ReplayWindow(arcade.Window):
         # ---------------------------
         # Leaderboard layout (right)
         # ---------------------------
-        self.lb_w = 280
+        self.lb_w = 400
         self.lb_h = self.height - 140
         self.lb_x = self.width - self.lb_w - 16
         self.lb_y = 90
@@ -191,8 +191,8 @@ class F1ReplayWindow(arcade.Window):
         # ---------------------------
         # Multiple compact driver telemetry boxes (left side, stacked)
         # ---------------------------
-        self.driver_box_w = 220
-        self.driver_box_h = 130
+        self.driver_box_w = 270
+        self.driver_box_h = 170
         self.max_driver_boxes = 1  # Show only selected driver
 
         # Create text objects for each driver box
@@ -204,7 +204,7 @@ class F1ReplayWindow(arcade.Window):
                     0,
                     0,
                     arcade.color.WHITE,
-                    13,
+                    16,
                     bold=True,
                     anchor_x="left",
                     anchor_y="top",
@@ -215,17 +215,17 @@ class F1ReplayWindow(arcade.Window):
                         0,
                         0,
                         arcade.color.LIGHT_GRAY,
-                        11,
+                        13,
                         anchor_x="left",
                         anchor_y="top",
                     )
-                    for _ in range(4)
+                    for _ in range(5)
                 ],
                 "throttle_pct": arcade.Text(
-                    "", 0, 0, arcade.color.WHITE, 10, bold=True, anchor_x="center"
+                    "", 0, 0, arcade.color.WHITE, 8, bold=True, anchor_x="center"
                 ),
                 "brake_pct": arcade.Text(
-                    "", 0, 0, arcade.color.WHITE, 10, bold=True, anchor_x="center"
+                    "", 0, 0, arcade.color.WHITE, 8, bold=True, anchor_x="center"
                 ),
             }
             self.driver_boxes.append(box)
@@ -379,7 +379,7 @@ class F1ReplayWindow(arcade.Window):
         # Lap header
         leader_lap = int(ordered[0][1].get("lap", 0)) if ordered else 0
         max_lap = max(int(st.get("lap", 0)) for _, st in ordered) if ordered else 0
-        self.lb_title.text = f"Leaderboard   Lap {leader_lap}/{max_lap}"
+        self.lb_title.text = f"Leaderboard"
         self.lb_title.draw()
 
         # Precompute progress + speed lists matching the ordered list (for interval gaps)
@@ -607,7 +607,11 @@ class F1ReplayWindow(arcade.Window):
         pos = int(st.get("pos", 0))
 
         throttle_val = min(max(float(st.get("throttle", 0)), 0.0), 100.0)
-        brake_val = min(max(float(st.get("brake", 0)), 0.0), 100.0)
+        # Brake can be 0-100 percentage or boolean (0/1), normalize to 0-100
+        raw_brake = float(st.get("brake", 0))
+        brake_val = min(
+            max(raw_brake * 100.0 if raw_brake <= 1.0 else raw_brake, 0.0), 100.0
+        )
 
         # Calculate gaps
         prog_list = [float(s.get("progress", 0)) for _, s in ordered]
@@ -638,8 +642,8 @@ class F1ReplayWindow(arcade.Window):
             # Title
             box["title"].text = f"Driver: {drv}"
             box["title"].color = driver_col
-            box["title"].x = box_x + 10
-            box["title"].y = box_y + self.driver_box_h - 8
+            box["title"].x = box_x + 15
+            box["title"].y = box_y + self.driver_box_h - 10
             box["title"].draw()
 
             # Info lines
@@ -647,21 +651,20 @@ class F1ReplayWindow(arcade.Window):
                 f"Speed: {speed:.0f} km/h",
                 f"Gear: {gear}",
                 f"DRS: {'OFF' if not _drs_is_active(drs) else 'ON'}",
-                f"Ahead (ALO): {gap_ahead}  Behind (SAI): {gap_behind}"
-                if gap_ahead or gap_behind
-                else "Ahead: N/A",
+                f"Ahead: {gap_ahead}" if gap_ahead else "Ahead: N/A",
+                f"Behind: {gap_behind}" if gap_behind else "Behind: N/A",
             ]
 
             for i, text in enumerate(lines):
                 box["lines"][i].text = text
-                box["lines"][i].x = box_x + 10
-                box["lines"][i].y = box_y + self.driver_box_h - 30 - i * 18
+                box["lines"][i].x = box_x + 15
+                box["lines"][i].y = box_y + self.driver_box_h - 35 - i * 24
                 box["lines"][i].draw()
 
             # Throttle and brake bars (vertical, on the right)
-            bar_w = 12
-            bar_h = 60
-            bar_x = box_x + self.driver_box_w - 35
+            bar_w = 35
+            bar_h = 120
+            bar_x = box_x + self.driver_box_w - 110
             bar_y = box_y + 20
 
             # Throttle bar (green)
@@ -698,7 +701,7 @@ class F1ReplayWindow(arcade.Window):
             box["throttle_pct"].draw()
 
             # Brake bar (red)
-            brake_x = bar_x + bar_w + 4
+            brake_x = bar_x + bar_w + 15
             arcade.draw_lrbt_rectangle_filled(
                 brake_x,
                 brake_x + bar_w,
@@ -725,11 +728,11 @@ class F1ReplayWindow(arcade.Window):
                 1,
             )
 
-        # Brake label
-        box["brake_pct"].text = "BRK"
-        box["brake_pct"].x = brake_x + bar_w / 2
-        box["brake_pct"].y = bar_y + bar_h + 8
-        box["brake_pct"].draw()
+            # Brake label
+            box["brake_pct"].text = "BRK"
+            box["brake_pct"].x = brake_x + bar_w / 2
+            box["brake_pct"].y = bar_y + bar_h + 8
+            box["brake_pct"].draw()
 
     def _draw_progress_bar(self, frame):
         # Progress bar at bottom showing race progress
