@@ -98,7 +98,7 @@ class F1ReplayWindow(arcade.Window):
         # ---------------------------
         # Leaderboard layout (right)
         # ---------------------------
-        self.lb_w = 400
+        self.lb_w = 320
         self.lb_h = self.height - 140
         self.lb_x = self.width - self.lb_w - 16
         self.lb_y = 90
@@ -394,9 +394,9 @@ class F1ReplayWindow(arcade.Window):
 
         # Columns (tuned for narrower leaderboard)
         x_text = self.lb_x + self.lb_padding
-        x_gap = self.lb_x + self.lb_w - 108  # NEW: interval column (right-aligned)
-        x_tyre = self.lb_x + self.lb_w - 64
-        x_drs = self.lb_x + self.lb_w - 26
+        x_gap = self.lb_x + self.lb_w - 90  # interval column
+        x_tyre = self.lb_x + self.lb_w - 52
+        x_drs = self.lb_x + self.lb_w - 20
 
         for idx, (drv, st) in enumerate(ordered[:20]):
             row_top = top_y - idx * self.lb_row_h
@@ -408,6 +408,35 @@ class F1ReplayWindow(arcade.Window):
                 (self.lb_x + 6, row_bottom, self.lb_x + self.lb_w - 6, row_top)
             )
 
+            # Position-based color gradient (P1-P3 get special colors)
+            pos = int(st["pos"])
+            if pos == 1:
+                pos_bg = (255, 215, 0, 35)  # Gold for P1
+            elif pos == 2:
+                pos_bg = (192, 192, 192, 30)  # Silver for P2
+            elif pos == 3:
+                pos_bg = (205, 127, 50, 25)  # Bronze for P3
+            else:
+                pos_bg = (40, 40, 45, 20)  # Subtle for others
+
+            rect = arcade.XYWH(
+                (self.lb_x + self.lb_x + self.lb_w) / 2,
+                row_cy,
+                self.lb_w - 12,
+                self.lb_row_h - 2,
+            )
+            arcade.draw_rect_filled(rect, pos_bg)
+
+            # Team color left border (3px wide)
+            col = self.driver_colors.get(drv, arcade.color.WHITE)
+            arcade.draw_lrbt_rectangle_filled(
+                self.lb_x + 6,
+                self.lb_x + 9,
+                row_bottom,
+                row_top,
+                col,
+            )
+
             # Hover highlight
             if self.hover_index == idx:
                 rect = arcade.XYWH(
@@ -416,7 +445,7 @@ class F1ReplayWindow(arcade.Window):
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
-                arcade.draw_rect_filled(rect, (255, 255, 255, 25))
+                arcade.draw_rect_filled(rect, (255, 255, 255, 30))
 
             # Selected highlight
             if self.selected_driver == drv:
@@ -426,14 +455,13 @@ class F1ReplayWindow(arcade.Window):
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
-                arcade.draw_rect_filled(rect, (255, 255, 255, 45))
+                arcade.draw_rect_filled(rect, (255, 255, 255, 55))
 
             # Driver text
-            col = self.driver_colors.get(drv, arcade.color.WHITE)
             self.lb_rows[idx].text = f"{int(st['pos']):>2}. {drv}"
-            self.lb_rows[idx].x = x_text
+            self.lb_rows[idx].x = x_text + 4
             self.lb_rows[idx].y = row_top - 4
-            self.lb_rows[idx].color = col
+            self.lb_rows[idx].color = arcade.color.WHITE
             self.lb_rows[idx].draw()
 
             # Interval gap to car ahead (seconds), using avg speed of (ahead + this)

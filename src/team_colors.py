@@ -3,17 +3,17 @@
 # You control these colors.
 # Format: (R, G, B)
 TEAM_COLORS = {
-    "RED_BULL": (30, 90, 220),
-    "FERRARI": (220, 30, 30),
-    "MCLAREN": (255, 140, 0),
-    "MERCEDES": (60, 220, 200),
-    "ASTON_MARTIN": (0, 140, 110),
-    "ALPINE": (80, 120, 255),
-    "WILLIAMS": (0, 120, 255),
-    "RB": (80, 80, 220),
-    "SAUBER": (40, 220, 40),
-    "HAAS": (200, 200, 200),
-    "CADILLAC": (255, 255, 255),
+    "RED_BULL": (6, 0, 239),
+    "FERRARI": (220, 0, 0),
+    "MCLAREN": (255, 135, 0),
+    "MERCEDES": (0, 210, 190),
+    "ASTON_MARTIN": (0, 111, 98),
+    "ALPINE": (0, 144, 255),
+    "WILLIAMS": (0, 90, 255),
+    "RB": (50, 70, 200),
+    "SAUBER": (0, 255, 135),
+    "HAAS": (230, 0, 30),
+    "UNKNOWN": (150, 150, 150),  # Gray for unknown drivers
 }
 
 # Map driver -> team key
@@ -21,33 +21,37 @@ DRIVER_TEAM = {
     # Red Bull
     "VER": "RED_BULL",
     "PER": "RED_BULL",
+    "TSU": "RED_BULL",
     # Ferrari
     "LEC": "FERRARI",
-    "SAI": "FERRARI",
+    "HAM": "FERRARI",
     # McLaren
     "NOR": "MCLAREN",
     "PIA": "MCLAREN",
     # Mercedes
-    "HAM": "MERCEDES",
+    "ANT": "MERCEDES",
     "RUS": "MERCEDES",
     # Aston Martin
     "ALO": "ASTON_MARTIN",
     "STR": "ASTON_MARTIN",
     # Alpine
     "GAS": "ALPINE",
-    "OCO": "ALPINE",
+    "COL": "ALPINE",
     # Williams
     "ALB": "WILLIAMS",
-    "SAR": "WILLIAMS",
+    "SAI": "WILLIAMS",
     # RB (Visa Cash App RB)
-    "TSU": "RB",
-    "RIC": "RB",
+    "HAD": "RB",
+    "LAW": "RB",
     # Sauber
-    "BOT": "SAUBER",
+    "HUL": "SAUBER",
     "ZHO": "SAUBER",
+    "BOR": "SAUBER",
+    "BOT": "SAUBER",
     # Haas
-    "HUL": "HAAS",
     "MAG": "HAAS",
+    "OCO": "HAAS",
+    "BEA": "HAAS",
 }
 
 

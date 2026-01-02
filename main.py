@@ -13,35 +13,7 @@ from src.track import (
 )
 from src.arcade_replay import F1ReplayWindow
 from src.f1_data import enable_cache, load_session, get_session_info
-
-
-# ------------------------------------------------------------
-# Team color mapping (EDIT THESE)
-# Use driver code -> (R,G,B) or arcade.color.*
-# ------------------------------------------------------------
-TEAM_COLORS = {
-    # Example:
-    # "VER": (37, 82, 255),
-    # "PER": (37, 82, 255),
-    # "HAM": (0, 255, 200),
-}
-
-
-def build_driver_colors(drivers):
-    """
-    Build driver colors. Priority:
-      1) TEAM_COLORS override (by driver code)
-      2) fallback deterministic color (simple hash)
-    """
-    out = {}
-    for d in drivers:
-        if d in TEAM_COLORS:
-            out[d] = TEAM_COLORS[d]
-        else:
-            # deterministic fallback
-            h = abs(hash(d)) % 255
-            out[d] = (80 + (h % 120), 80 + ((h * 3) % 120), 80 + ((h * 7) % 120))
-    return out
+from src.team_colors import build_driver_colors
 
 
 def build_tyre_map(session):
