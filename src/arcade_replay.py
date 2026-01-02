@@ -70,6 +70,10 @@ class F1ReplayWindow(arcade.Window):
         self.show_ui = True  # Toggle for showing/hiding UI panels
         self.show_progress_bar = True  # Toggle for progress bar
 
+        # Track fastest lap driver
+        self.fastest_lap_driver = None
+        self.fastest_lap_time = float("inf")
+
         arcade.set_background_color(arcade.color.BLACK)
 
         # Precompute track polyline in screen coords (performance)
@@ -345,6 +349,14 @@ class F1ReplayWindow(arcade.Window):
         leader_lap = int(ordered[0][1].get("lap", 1)) if ordered else 1
         max_lap = max(int(st.get("lap", 1)) for _, st in ordered) if ordered else 1
 
+        # Track fastest lap (check all drivers' lap times in current frame)
+        for drv, st in frame["drivers"].items():
+            lap_time = st.get("lap_time", None)
+            if lap_time and lap_time > 0:
+                if lap_time < self.fastest_lap_time:
+                    self.fastest_lap_time = lap_time
+                    self.fastest_lap_driver = drv
+
         self.lap_text.text = f"Lap: {leader_lap}/{max_lap}"
         speed = self.speed_choices[self.speed_i]
         t = frame["t"]
@@ -434,7 +446,11 @@ class F1ReplayWindow(arcade.Window):
 
             # Position-based color gradient (P1-P3 get special colors)
             pos = int(st["pos"])
-            if pos == 1:
+
+            # Check if this driver has fastest lap - purple indicator
+            if drv == self.fastest_lap_driver:
+                pos_bg = (180, 100, 255, 60)  # Bright purple for fastest lap
+            elif pos == 1:
                 pos_bg = (255, 215, 0, 35)  # Gold for P1
             elif pos == 2:
                 pos_bg = (192, 192, 192, 30)  # Silver for P2
