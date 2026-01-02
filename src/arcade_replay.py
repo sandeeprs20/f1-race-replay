@@ -68,6 +68,7 @@ class F1ReplayWindow(arcade.Window):
         self.speed_choices = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
         self.speed_i = 1
         self.show_ui = True  # Toggle for showing/hiding UI panels
+        self.show_progress_bar = True  # Toggle for progress bar
 
         arcade.set_background_color(arcade.color.BLACK)
 
@@ -88,11 +89,11 @@ class F1ReplayWindow(arcade.Window):
         )
 
         self.help_text = arcade.Text(
-            "[SPACE] Pause/Resume  [←/→] Rewind / Fast-Forward  [↑/↓] Speed ++/--  [R] Restart  [H] Hide/Show UI",
+            "[SPACE] Pause  [←/→] Seek  [↑/↓] Speed  [R] Restart  [H] UI  [P] Progress",
             20,
-            20,
+            20,  # Will be updated dynamically
             arcade.color.LIGHT_GRAY,
-            11,
+            10,
         )
 
         # ---------------------------
@@ -278,6 +279,17 @@ class F1ReplayWindow(arcade.Window):
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
 
+        # Check if clicked on progress bar
+        if self.show_progress_bar and hasattr(self, "_progress_bar_rect"):
+            bar_x, bar_y, bar_x2, bar_y2 = self._progress_bar_rect
+            if bar_x <= x <= bar_x2 and bar_y <= y <= bar_y2:
+                # Calculate which frame to jump to
+                progress = (x - bar_x) / (bar_x2 - bar_x)
+                self.frame_idx = progress * (self.n_frames - 1)
+                self.frame_idx = max(0, min(self.frame_idx, self.n_frames - 1))
+                return
+
+        # Check leaderboard clicks
         idx = self._leaderboard_row_at(x, y)
         if idx is None:
             return
@@ -342,6 +354,15 @@ class F1ReplayWindow(arcade.Window):
 
         self.lap_text.draw()
         self.race_time_text.draw()
+
+        # Position help text below driver telemetry box (left side)
+        if self.show_ui and self.selected_driver:
+            # Calculate position below driver box
+            help_y = self.compact_weather_y - self.driver_box_h - 30
+            self.help_text.y = help_y
+        else:
+            self.help_text.y = 20
+
         self.help_text.draw()
 
         # UI panels (can be toggled off)
@@ -349,6 +370,9 @@ class F1ReplayWindow(arcade.Window):
             self._draw_leaderboard(frame)
             self._draw_compact_weather(frame)
             self._draw_driver_boxes(frame)
+
+        # Progress bar (separate toggle)
+        if self.show_progress_bar:
             self._draw_progress_bar(frame)
 
     def _draw_leaderboard(self, frame):
@@ -763,48 +787,79 @@ class F1ReplayWindow(arcade.Window):
             box["brake_pct"].draw()
 
     def _draw_progress_bar(self, frame):
-        # Progress bar at bottom showing race progress
-        bar_w = self.width - 40
-        bar_h = 8
-        bar_x = 20
-        bar_y = 50
+        # Progress bar at bottom - centered and modern
+        bar_w = 700
+        bar_h = 10
+        bar_x = (self.width - bar_w) / 2
+        bar_y = 20
 
-        # Background
+        # Outer glow effect
+        glow_padding = 2
+        arcade.draw_lrbt_rectangle_filled(
+            bar_x - glow_padding,
+            bar_x + bar_w + glow_padding,
+            bar_y - glow_padding,
+            bar_y + bar_h + glow_padding,
+            (60, 60, 80, 100),
+        )
+
+        # Background with darker tone
         arcade.draw_lrbt_rectangle_filled(
             bar_x,
             bar_x + bar_w,
             bar_y,
             bar_y + bar_h,
-            (40, 40, 45),
+            (20, 20, 25),
         )
 
-        # Progress fill
+        # Progress fill with vibrant gradient
         progress = self.frame_idx / max(self.n_frames - 1, 1)
         fill_w = progress * bar_w
 
-        # Gradient from green to yellow to red
-        if progress < 0.5:
-            color = (int(progress * 2 * 255), 200, 50)
+        # Enhanced gradient: electric blue to cyan to green
+        if progress < 0.25:
+            t = progress / 0.25
+            color = (int(t * 50), int(100 + t * 150), int(200 + t * 55))
+        elif progress < 0.5:
+            t = (progress - 0.25) / 0.25
+            color = (int(50 + t * 0), int(250 - t * 50), 255)
+        elif progress < 0.75:
+            t = (progress - 0.5) / 0.25
+            color = (int(t * 100), int(200 + t * 55), int(255 - t * 100))
         else:
-            color = (255, int((1 - progress) * 2 * 200), 50)
+            t = (progress - 0.75) / 0.25
+            color = (int(100 + t * 155), int(255 - t * 105), int(155 - t * 55))
 
-        arcade.draw_lrbt_rectangle_filled(
-            bar_x,
-            bar_x + fill_w,
-            bar_y,
-            bar_y + bar_h,
-            color,
-        )
+        if fill_w > 0:
+            arcade.draw_lrbt_rectangle_filled(
+                bar_x,
+                bar_x + fill_w,
+                bar_y,
+                bar_y + bar_h,
+                color,
+            )
 
-        # Border
+            # Brighter edge on the progress
+            if fill_w > 2:
+                arcade.draw_lrbt_rectangle_filled(
+                    bar_x + fill_w - 2,
+                    bar_x + fill_w,
+                    bar_y,
+                    bar_y + bar_h,
+                    (255, 255, 255, 150),
+                )
+
+        # Sleek border
         arcade.draw_lrbt_rectangle_outline(
             bar_x,
             bar_x + bar_w,
             bar_y,
             bar_y + bar_h,
-            (100, 100, 105),
-            2,
+            (100, 100, 120),
         )
+
+        # Store bar bounds for click detection
+        self._progress_bar_rect = (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h)
 
     def on_key_press(self, symbol: int, modifiers: int):
         if symbol == arcade.key.SPACE:
@@ -814,6 +869,8 @@ class F1ReplayWindow(arcade.Window):
             self.paused = False
         elif symbol == arcade.key.H:
             self.show_ui = not self.show_ui
+        elif symbol == arcade.key.P:
+            self.show_progress_bar = not self.show_progress_bar
         elif symbol == arcade.key.UP:
             self.speed_i = min(self.speed_i + 1, len(self.speed_choices) - 1)
         elif symbol == arcade.key.DOWN:
