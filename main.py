@@ -63,6 +63,16 @@ def main():
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--refresh", action="store_true")
 
+    # NEW: AI racer arguments
+    parser.add_argument(
+        "--ai", action="store_true", help="Enable AI racer (perfect lap)"
+    )
+    parser.add_argument(
+        "--ai-driver",
+        type=str,
+        default=None,
+        help="Base AI on specific driver's fastest lap (e.g., VER, HAM)",
+    )
     args = parser.parse_args()
 
     cache_dir = enable_cache(".fastf1-cache")
@@ -73,10 +83,10 @@ def main():
     if not args.refresh:
         cached = load_replay_cache(args.year, args.round, args.session, args.fps)
 
-    session = None
-    info = None
-    timeline = None
-    frames = None
+        session = None
+        info = None
+        timeline = None
+        frames = None
 
     if cached is not None:
         print("\nCache hit! Loaded replay from computed_data.")
@@ -92,6 +102,146 @@ def main():
         # Need session for track + tyre map (FastF1 cache makes this fast)
         session = load_session(args.year, args.round, args.session, force_reload=False)
         info = get_session_info(session)
+
+        telemetry = extract_driver_telemetry(session)
+        print(f"\nTelemetry extracted for {len(telemetry)} drivers")
+
+        # Generate AI racer if requested
+        # if args.ai:
+        #     from src.ai.simple_ai import (
+        #         generate_ai_lap_from_fastest,
+        #         generate_ai_lap_from_driver,
+        #     )
+
+        #     print("\n=== GENERATING AI RACER ===")
+
+        #     if args.ai_driver:
+        #         # AI based on specific driver
+        #         ai_telemetry = generate_ai_lap_from_driver(session, args.ai_driver)
+        #     else:
+        #         # AI based on fastest lap overall
+        #         ai_telemetry = generate_ai_lap_from_fastest(session)
+
+        #     if ai_telemetry:
+        #         telemetry["AI"] = ai_telemetry
+        #         print("✓ AI racer added to replay")
+        #     else:
+        #         print("⚠ AI racer generation failed, continuing without AI")
+
+        # If AI is requested, we need to add it to the cached frames
+        if args.ai:
+            print("⚠ Note: AI racer not in cache, generating fresh...")
+            from src.ai.simple_ai import (
+                generate_ai_lap_from_fastest,
+                generate_ai_lap_from_driver,
+            )
+
+            if args.ai_driver:
+                ai_telemetry = generate_ai_lap_from_driver(session, args.ai_driver)
+            else:
+                ai_telemetry = generate_ai_lap_from_fastest(session)
+
+            if ai_telemetry:
+                # The AI telemetry is only one lap - we need to loop it to match race duration
+                from src.replay_clock import resample_all_drivers
+
+                # Get lap length and lap time from AI telemetry
+                lap_length = float(ai_telemetry["distance"][-1])
+                lap_time = float(ai_telemetry["time"][-1] - ai_telemetry["time"][0])
+
+                # Determine how many laps we need to cover the timeline
+                race_duration = timeline[-1]
+                num_laps = int(np.ceil(race_duration / lap_time)) + 1
+
+                print(
+                    f"Looping AI lap {num_laps} times to cover {race_duration:.1f}s race"
+                )
+
+                # Tile/repeat the AI lap data to cover the full race
+                tiled_telemetry = {
+                    "time": [],
+                    "x": [],
+                    "y": [],
+                    "distance": [],
+                    "speed": [],
+                    "gear": [],
+                    "drs": [],
+                    "lap": [],
+                    "throttle": [],
+                    "brake": [],
+                }
+
+                for lap_num in range(1, num_laps + 1):
+                    time_offset = (lap_num - 1) * lap_time
+                    tiled_telemetry["time"].append(ai_telemetry["time"] + time_offset)
+                    tiled_telemetry["x"].append(ai_telemetry["x"])
+                    tiled_telemetry["y"].append(ai_telemetry["y"])
+                    tiled_telemetry["distance"].append(
+                        ai_telemetry["distance"] + (lap_num - 1) * lap_length
+                    )
+                    tiled_telemetry["speed"].append(ai_telemetry["speed"])
+                    tiled_telemetry["gear"].append(ai_telemetry["gear"])
+                    tiled_telemetry["drs"].append(ai_telemetry["drs"])
+                    tiled_telemetry["lap"].append(
+                        np.full_like(ai_telemetry["lap"], lap_num)
+                    )
+                    tiled_telemetry["throttle"].append(ai_telemetry["throttle"])
+                    tiled_telemetry["brake"].append(ai_telemetry["brake"])
+
+                # Concatenate all laps
+                for key in tiled_telemetry:
+                    tiled_telemetry[key] = np.concatenate(tiled_telemetry[key])
+
+                # Create a dict with AI telemetry
+                ai_dict = {"AI": tiled_telemetry}
+
+                # Resample using existing function
+                ai_resampled = resample_all_drivers(ai_dict, timeline, timeline[0])
+
+                # Get lap length from session
+                lap_length_session = 5000.0  # Default estimate
+                try:
+                    example_lap = session.laps.pick_fastest()
+                    tel_example = example_lap.get_telemetry(add_driver_ahead=False)
+                    lap_length_session = float(tel_example["Distance"].max())
+                except:
+                    lap_length_session = lap_length
+
+                # Add AI to each frame with proper position calculation
+                for i, frame in enumerate(frames):
+                    ai_lap = int(ai_resampled["AI"]["lap"][i])
+                    ai_dist = float(ai_resampled["AI"]["distance"][i])
+
+                    # Calculate AI progress (same formula as in frames.py)
+                    ai_progress = float(
+                        (ai_lap - 1) * lap_length_session
+                        + (ai_dist % lap_length_session)
+                    )
+
+                    frame["drivers"]["AI"] = {
+                        "x": float(ai_resampled["AI"]["x"][i]),
+                        "y": float(ai_resampled["AI"]["y"][i]),
+                        "speed": float(ai_resampled["AI"]["speed"][i]),
+                        "distance": float(ai_resampled["AI"]["distance"][i]),
+                        "gear": int(ai_resampled["AI"]["gear"][i]),
+                        "drs": int(ai_resampled["AI"]["drs"][i]),
+                        "lap": ai_lap,
+                        "throttle": float(ai_resampled["AI"]["throttle"][i]),
+                        "brake": float(ai_resampled["AI"]["brake"][i]),
+                        "compound": "SOFT",  # Default tyre for AI
+                        "progress": ai_progress,
+                        "pos": 0,  # Placeholder, will be recalculated below
+                    }
+
+                    # Recalculate all positions including AI
+                    all_drivers = list(frame["drivers"].items())
+                    all_drivers.sort(key=lambda x: x[1]["progress"], reverse=True)
+
+                    # Update positions
+                    for pos, (drv, _) in enumerate(all_drivers, start=1):
+                        frame["drivers"][drv]["pos"] = pos
+
+                print("✓ AI racer added to cached replay")
 
     else:
         print("\nCache miss (or --refresh). Computing replay...")
@@ -110,6 +260,79 @@ def main():
 
         telemetry = extract_driver_telemetry(session)
         print(f"\nTelemetry extracted for {len(telemetry)} drivers")
+
+        # If AI is requested, we need to add it to the cached frames
+        if args.ai:
+            print("⚠ Note: AI racer not in cache, generating fresh...")
+            from src.ai.simple_ai import (
+                generate_ai_lap_from_fastest,
+                generate_ai_lap_from_driver,
+            )
+
+            if args.ai_driver:
+                ai_telemetry = generate_ai_lap_from_driver(session, args.ai_driver)
+            else:
+                ai_telemetry = generate_ai_lap_from_fastest(session)
+
+            if ai_telemetry:
+                # Resample AI to match the cached timeline
+                from src.replay_clock import resample_all_drivers
+
+                # Create a dict with just AI telemetry
+                ai_dict = {"AI": ai_telemetry}
+
+                # Resample using existing function
+                ai_resampled = resample_all_drivers(ai_dict, timeline, timeline[0])
+
+                # Add AI to each frame with proper position calculation
+                for i, frame in enumerate(frames):
+                    ai_lap = int(ai_resampled["AI"]["lap"][i])
+                    ai_dist = float(ai_resampled["AI"]["distance"][i])
+
+                    # Get lap_length from first real driver
+                    first_driver_key = next(iter(frame["drivers"].keys()))
+                    # Estimate lap length from existing drivers
+                    lap_length = 5000.0  # Default estimate
+                    try:
+                        # Try to get lap length from session if available
+                        if session:
+                            example_lap = session.laps.pick_fastest()
+                            tel_example = example_lap.get_telemetry(
+                                add_driver_ahead=False
+                            )
+                            lap_length = float(tel_example["Distance"].max())
+                    except:
+                        pass
+
+                    # Calculate AI progress (same formula as in frames.py)
+                    ai_progress = float(
+                        (ai_lap - 1) * lap_length + (ai_dist % lap_length)
+                    )
+
+                    frame["drivers"]["AI"] = {
+                        "x": float(ai_resampled["AI"]["x"][i]),
+                        "y": float(ai_resampled["AI"]["y"][i]),
+                        "speed": float(ai_resampled["AI"]["speed"][i]),
+                        "distance": float(ai_resampled["AI"]["distance"][i]),
+                        "gear": int(ai_resampled["AI"]["gear"][i]),
+                        "drs": int(ai_resampled["AI"]["drs"][i]),
+                        "lap": ai_lap,
+                        "throttle": float(ai_resampled["AI"]["throttle"][i]),
+                        "brake": float(ai_resampled["AI"]["brake"][i]),
+                        "compound": "SOFT",  # Default tyre for AI
+                        "progress": ai_progress,
+                        "pos": 0,  # Placeholder, will be recalculated below
+                    }
+
+                    # Recalculate all positions including AI
+                    all_drivers = list(frame["drivers"].items())
+                    all_drivers.sort(key=lambda x: x[1]["progress"], reverse=True)
+
+                    # Update positions
+                    for pos, (drv, _) in enumerate(all_drivers, start=1):
+                        frame["drivers"][drv]["pos"] = pos
+
+                print("AI racer added to cached replay")
 
         # Build timeline + resample
         timeline, t0, t1 = build_global_timeline(telemetry, fps=args.fps)
@@ -184,6 +407,11 @@ def main():
     )
 
     driver_colors = build_driver_colors(frames[0]["drivers"].keys())
+
+    # CHANGE 4: CUSTOM COLOR FOR AI
+    # Give AI a distinctive bright green color
+    if args.ai and "AI" in frames[0]["drivers"]:
+        driver_colors["AI"] = (0, 255, 100)  # Bright green
 
     window = F1ReplayWindow(
         frames=frames,

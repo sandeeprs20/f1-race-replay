@@ -41,7 +41,8 @@ def extract_driver_telemetry(session):
         for _, lap in driver_laps.iterrows():
             try:
                 # Get telemetry for this lap
-                tel = lap.get_telemetry()
+                # add_driver_ahead can be very slow/hang on some sessions, so disable it
+                tel = lap.get_telemetry(add_driver_ahead=False)
 
                 if tel.empty:
                     continue
