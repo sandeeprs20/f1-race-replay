@@ -115,6 +115,12 @@ class F1ReplayWindow(arcade.Window):
         self.hover_index = None
         self.selected_driver = None
 
+        # Track drivers who have retired (once OUT, always OUT)
+        self.retired_drivers = set()
+        # Track last known progress for each driver to detect if stuck
+        self.last_progress = {}
+        self.stuck_frames = {}  # Count frames driver hasn't moved
+
         self.lb_title = arcade.Text(
             "Leaderboard",
             self.lb_x + self.lb_padding,
@@ -505,8 +511,31 @@ class F1ReplayWindow(arcade.Window):
             self.lb_rows[idx].draw()
 
             # Interval gap to car ahead (seconds), using avg speed of (ahead + this)
+            # Check if driver is retired (already marked OR stuck for extended period)
+            driver_speed = spd_list_kmh[idx]
+            driver_progress = prog_list[idx]
+
+            # Detect stuck/retired drivers: very low speed AND not moving forward
+            if drv not in self.retired_drivers:
+                if drv in self.last_progress:
+                    progress_delta = abs(driver_progress - self.last_progress[drv])
+                    # If moving less than 10m AND speed very low, might be stuck
+                    if progress_delta < 10.0 and driver_speed < 10.0:
+                        self.stuck_frames[drv] = self.stuck_frames.get(drv, 0) + 1
+                        # Mark as OUT after being stuck for 3 seconds (75 frames at 25fps)
+                        if self.stuck_frames[drv] > 75:
+                            self.retired_drivers.add(drv)
+                    else:
+                        # Driver is moving, reset stuck counter
+                        self.stuck_frames[drv] = 0
+                self.last_progress[drv] = driver_progress
+
             if idx == 0:
                 gap_str = "LEADER"
+            elif drv in self.retired_drivers:
+                # Driver is retired (once OUT, always OUT)
+                gap_str = "OUT"
+                self.gap_texts[idx].color = arcade.color.RED
             else:
                 gap_m = max(0.0, prog_list[idx - 1] - prog_list[idx])
 
@@ -521,6 +550,7 @@ class F1ReplayWindow(arcade.Window):
                 #     gap_s = 0.0
 
                 gap_str = f"+{gap_s:.1f}"
+                self.gap_texts[idx].color = arcade.color.LIGHT_GRAY
 
             self.gap_texts[idx].text = gap_str
             self.gap_texts[idx].x = x_gap
