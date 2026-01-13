@@ -120,19 +120,6 @@ Two-layer caching for different concerns:
 - Control: `--refresh` flag bypasses
 - Implementation: `src/cache.py:30-88`
 
-## AI Racer Design
-
-Simple, deterministic approach (`src/ai/simple_ai.py:9-56`):
-
-1. Extract fastest lap telemetry from session
-2. Create single-lap AI telemetry dict
-3. Loop/tile the lap to match race duration:
-   - Calculate lap time from telemetry
-   - Repeat N times with time/distance offsets
-   - Concatenate arrays
-
-This avoids complex path planning while providing realistic "perfect" performance.
-
 ## Color Assignment
 
 ### Team Colors (`src/team_colors.py:10-45`)

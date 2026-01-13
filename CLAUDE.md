@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Formula 1 race replay visualization system that downloads real telemetry data via FastF1 and renders interactive, animated replays of races, qualifying, and practice sessions. Features include real-time leaderboard, driver telemetry, tyre tracking, weather display, and AI racer generation.
+A Formula 1 race replay visualization system that downloads real telemetry data via FastF1 and renders interactive, animated replays of races, qualifying, and practice sessions. Features include real-time leaderboard, driver telemetry, tyre tracking, and weather display.
 
 ## Tech Stack
 
@@ -29,9 +29,7 @@ f1-race-replay/
 │   ├── cache.py               # Pickle-based replay persistence
 │   ├── team_colors.py         # Driver → team → RGB color mapping
 │   ├── colors.py              # MD5-based fallback color generation
-│   ├── tyres.py               # Tyre compound mapping
-│   └── ai/
-│       └── simple_ai.py       # AI racer generation (fastest lap loop)
+│   └── tyres.py               # Tyre compound mapping
 ├── images/                    # Asset directory
 │   ├── tyres/                 # Tyre compound PNGs
 │   └── weather/               # Weather condition icons
@@ -48,7 +46,6 @@ f1-race-replay/
 | `src/telemetry.py:25-110` | Telemetry extraction and lap stitching |
 | `src/replay_clock.py:147-240` | Interpolation (continuous) vs stepwise (discrete) resampling |
 | `src/frames.py:23-71` | Position/progress calculation across lap boundaries |
-| `src/ai/simple_ai.py:9-56` | AI generation from fastest lap |
 
 ## Adding New Features or Fixing Bugs
 
@@ -66,8 +63,8 @@ pip install -r requirements.txt
 # Basic run (2024 Season Round 1 Qualifying at 25fps)
 python main.py
 
-# Custom session with AI racer
-python main.py --year 2024 --round 5 --session R --ai --fps 30
+# Custom session
+python main.py --year 2024 --round 5 --session R --fps 30
 
 # Force re-download (ignore FastF1 cache)
 python main.py --year 2024 --round 1 --force
@@ -84,8 +81,6 @@ python main.py --year 2024 --round 1 --refresh
 | `--round` | Race round number | 1 |
 | `--session` | Session type: R, Q, S, FP1/2/3 | Q |
 | `--fps` | Replay frame rate | 25 |
-| `--ai` | Enable AI racer (perfect lap) | False |
-| `--ai-driver` | Base AI on specific driver (e.g., VER) | None |
 | `--force` | Force re-download despite cache | False |
 | `--refresh` | Ignore computed cache, recompute | False |
 
@@ -109,6 +104,10 @@ Two-layer caching for performance:
 ## Testing
 
 No formal test suite exists. Validation is done manually by running replays.
+
+## Planned Features
+
+- **AI Racer** - Generate a "perfect lap" AI driver based on fastest lap telemetry, looped to race duration
 
 ## Additional Documentation
 
