@@ -141,39 +141,6 @@ def _interp_stepwise(t_src, v_src, t_dst):
     return v_src[idx]
 
 
-# We need to add this to src/replay_clock.py if it doesn't exist
-
-
-def resample_driver(driver_telemetry, timeline, t0):
-    """
-    Resample a single driver's telemetry to the global timeline.
-
-    Args:
-        driver_telemetry: dict with keys 'time', 'x', 'y', 'speed', etc.
-        timeline: global timeline array (seconds)
-        t0: time offset (usually min start time)
-
-    Returns:
-        dict: resampled telemetry matching timeline
-    """
-
-    # Adjust driver's time to be relative to t0
-    driver_time = driver_telemetry["time"] - t0
-
-    resampled = {}
-
-    for key in driver_telemetry.keys():
-        if key == "time":
-            continue  # Don't resample time itself
-
-        # Interpolate each channel to the global timeline
-        resampled[key] = np.interp(
-            timeline, driver_time, driver_telemetry[key], left=np.nan, right=np.nan
-        )
-
-    return resampled
-
-
 def resample_all_drivers(all_driver_tel: dict, timeline: np.ndarray, t0: float):
     """
     Resample every driver's telemetry onto the global timeline
