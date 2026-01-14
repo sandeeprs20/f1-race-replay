@@ -43,6 +43,9 @@ class SessionInfo:
     # List of driver abbreviations (VER, HAM)
     drivers: List[str]
 
+    # Total laps in the race (None for non-race sessions)
+    total_laps: Optional[int] = None
+
 
 """
 This function enables fastf1 caching. 
@@ -107,6 +110,35 @@ This function extracts readable metadata from a loaded session
 """
 
 
+def get_driver_status(session) -> dict:
+    """
+    Get driver finishing status from session results.
+
+    Returns:
+        dict[driver_code] = status_string
+        e.g. {"VER": "Finished", "HAM": "Retired", "RUS": "+1 Lap"}
+    """
+    status_map = {}
+    try:
+        results = session.results
+        if results is None or results.empty:
+            return status_map
+
+        for _, row in results.iterrows():
+            # Get driver abbreviation
+            abbrev = row.get("Abbreviation", None)
+            if abbrev is None:
+                continue
+
+            # Get status
+            status = row.get("Status", "Unknown")
+            status_map[str(abbrev)] = str(status)
+    except Exception:
+        pass
+
+    return status_map
+
+
 def get_session_info(session) -> SessionInfo:
     # Try to get event name safely, some seasons store it differently,
     # so we guard with getattr
@@ -135,6 +167,18 @@ def get_session_info(session) -> SessionInfo:
             # Fall back in case something goes wrong
             codes.append(str(d))
 
+    # Try to get total laps for race sessions
+    total_laps = None
+    try:
+        total_laps = getattr(session, "total_laps", None)
+        if total_laps is None:
+            # Try alternative attribute names
+            total_laps = getattr(session, "TotalLaps", None)
+        if total_laps is not None:
+            total_laps = int(total_laps)
+    except Exception:
+        pass
+
     # Create and return a SessionInfo object
     return SessionInfo(
         # Extract year from the event date
@@ -153,4 +197,6 @@ def get_session_info(session) -> SessionInfo:
         circuit_name=str(circuit_name),
         # Sorted unique list of driver abbreviations
         drivers=sorted(set(codes)),
+        # Total laps
+        total_laps=total_laps,
     )

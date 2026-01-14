@@ -12,7 +12,7 @@ from src.track import (
     build_world_to_screen_transform,
 )
 from src.arcade_replay import F1ReplayWindow
-from src.f1_data import enable_cache, load_session, get_session_info
+from src.f1_data import enable_cache, load_session, get_session_info, get_driver_status
 from src.team_colors import build_driver_colors
 
 
@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--fullscreen", action="store_true", help="Start in fullscreen mode")
 
     args = parser.parse_args()
 
@@ -185,6 +186,10 @@ def main():
 
     driver_colors = build_driver_colors(frames[0]["drivers"].keys())
 
+    # Get driver finishing status (Finished, Retired, DNF, etc.)
+    driver_status = get_driver_status(session)
+    print(f"Driver status: {driver_status}")
+
     window = F1ReplayWindow(
         frames=frames,
         track_xy=(x_track, y_track),
@@ -196,6 +201,9 @@ def main():
         title=f"F1 Replay {args.year} R{args.round:02d} {args.session}",
         race_info=info.event_name,
         session_info=info.session_name,
+        total_laps=info.total_laps,
+        driver_status=driver_status,
+        fullscreen=args.fullscreen,
     )
 
     arcade.run()
