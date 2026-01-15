@@ -3,25 +3,37 @@ import arcade
 from src.track import world_to_screen
 
 # ================================
-# RETRO NEON UI PALETTE
+# F1 TV BROADCAST STYLE PALETTE
 # ================================
-NEON_CYAN = (0, 255, 255)
-NEON_PINK = (255, 0, 128)
-NEON_PURPLE = (180, 0, 255)
-NEON_GREEN = (0, 255, 100)
-NEON_YELLOW = (255, 255, 0)
-NEON_ORANGE = (255, 150, 0)
-NEON_RED = (255, 50, 50)
+# Official F1 colors
+F1_RED = (225, 6, 0)           # Official F1 red
+F1_BLACK = (21, 21, 30)        # Near-black background
+F1_DARK_GRAY = (38, 38, 48)    # Panel backgrounds
+F1_GRAY = (68, 68, 78)         # Secondary elements
+F1_WHITE = (255, 255, 255)     # Primary text
+F1_LIGHT_GRAY = (180, 180, 185)  # Secondary text
+
+# Position colors (podium)
+P1_GOLD = (255, 215, 0)
+P2_SILVER = (192, 192, 200)
+P3_BRONZE = (205, 127, 50)
+
+# Status colors
+DRS_GREEN = (0, 210, 80)
+FASTEST_PURPLE = (170, 0, 255)
+INTERVAL_YELLOW = (255, 210, 0)
 
 # Panel colors
-PANEL_BG = (20, 5, 35, 220)  # Dark purple with transparency
-
-# Text colors
-TEXT_SECONDARY = (150, 200, 255)
+PANEL_BG = (28, 28, 38, 240)
+PANEL_BG_ALT = (38, 38, 50, 240)
 
 
 def draw_rounded_rectangle(x, y, width, height, color, radius=10):
     """Draw a filled rectangle with rounded corners."""
+    radius = max(0, min(radius, width / 2, height / 2))
+    if radius <= 0:
+        arcade.draw_lrbt_rectangle_filled(x, x + width, y, y + height, color)
+        return
     # Draw main body rectangles
     arcade.draw_lrbt_rectangle_filled(x + radius, x + width - radius, y, y + height, color)
     arcade.draw_lrbt_rectangle_filled(x, x + width, y + radius, y + height - radius, color)
@@ -34,6 +46,10 @@ def draw_rounded_rectangle(x, y, width, height, color, radius=10):
 
 def draw_rounded_rectangle_outline(x, y, width, height, color, radius=10, line_width=1):
     """Draw a rectangle outline with rounded corners."""
+    radius = max(0, min(radius, width / 2, height / 2))
+    if radius <= 0:
+        arcade.draw_lrbt_rectangle_outline(x, x + width, y, y + height, color, line_width)
+        return
     # Draw straight lines
     arcade.draw_line(x + radius, y, x + width - radius, y, color, line_width)  # Bottom
     arcade.draw_line(x + radius, y + height, x + width - radius, y + height, color, line_width)  # Top
@@ -44,6 +60,15 @@ def draw_rounded_rectangle_outline(x, y, width, height, color, radius=10, line_w
     arcade.draw_arc_outline(x + width - radius, y + radius, radius * 2, radius * 2, color, 270, 360, line_width)
     arcade.draw_arc_outline(x + radius, y + height - radius, radius * 2, radius * 2, color, 90, 180, line_width)
     arcade.draw_arc_outline(x + width - radius, y + height - radius, radius * 2, radius * 2, color, 0, 90, line_width)
+
+
+def draw_f1_panel(x, y, width, height, radius=4, show_red_accent=True):
+    """Draw an F1 broadcast style panel with optional red accent line."""
+    # Main panel background
+    draw_rounded_rectangle(x, y, width, height, PANEL_BG, radius)
+    # Red accent line on top (F1 signature style)
+    if show_red_accent:
+        arcade.draw_lrbt_rectangle_filled(x, x + width, y + height - 3, y + height, F1_RED)
 
 
 def _compound_key(compound: str | None) -> str:
@@ -122,7 +147,7 @@ class F1ReplayWindow(arcade.Window):
         self.fastest_lap_driver = None
         self.fastest_lap_time = float("inf")
 
-        arcade.set_background_color(arcade.color.BLACK)
+        arcade.set_background_color(F1_BLACK)
 
         # Precompute track polyline in screen coords (performance)
         self.track_pts_screen = []
@@ -137,7 +162,7 @@ class F1ReplayWindow(arcade.Window):
             self.race_info,
             self.width // 2,
             self.height - 20,
-            NEON_PINK,
+            F1_WHITE,
             18,
             bold=True,
             anchor_x="center",
@@ -147,18 +172,19 @@ class F1ReplayWindow(arcade.Window):
             self.session_info,
             self.width // 2,
             self.height - 42,
-            NEON_CYAN,
+            F1_RED,
             14,
+            bold=True,
             anchor_x="center",
             anchor_y="top",
         )
 
-        # Lap and Race time (top left) - NEON STYLE
+        # Lap and Race time (top left)
         self.lap_text = arcade.Text(
-            "", 20, self.height - 25, NEON_CYAN, 16, bold=True
+            "", 20, self.height - 25, F1_WHITE, 16, bold=True
         )
         self.race_time_text = arcade.Text(
-            "", 20, self.height - 48, NEON_PINK, 13
+            "", 20, self.height - 48, F1_LIGHT_GRAY, 13
         )
 
         # Controls text (bottom left, multi-line)
@@ -166,7 +192,7 @@ class F1ReplayWindow(arcade.Window):
             "CONTROLS\n[SPACE] Pause/Play\n[←/→] Seek 5s\n[↑/↓] Speed\n[R] Restart\n[H] Toggle UI\n[P] Progress Bar\n[F] Fullscreen",
             20,
             170,
-            TEXT_SECONDARY,
+            F1_LIGHT_GRAY,
             11,
             multiline=True,
             width=200,
@@ -192,20 +218,20 @@ class F1ReplayWindow(arcade.Window):
             "LEADERBOARD",
             self.lb_x + self.lb_padding,
             self.lb_y + self.lb_h - 10,
-            NEON_PINK,
+            F1_WHITE,
             16,
             bold=True,
             anchor_x="left",
             anchor_y="top",
         )
 
-        # We'll reuse these text objects (positions updated each draw) - NEON
+        # We'll reuse these text objects (positions updated each draw)
         self.lb_rows = [
             arcade.Text(
                 "",
                 0,
                 0,
-                NEON_CYAN,
+                F1_WHITE,
                 14,
                 anchor_x="left",
                 anchor_y="top",
@@ -249,7 +275,7 @@ class F1ReplayWindow(arcade.Window):
             "WEATHER",
             self.weather_x + 12,
             self.weather_y + self.weather_h - 12,
-            NEON_PINK,
+            F1_WHITE,
             13,
             bold=True,
             anchor_x="left",
@@ -260,7 +286,7 @@ class F1ReplayWindow(arcade.Window):
                 "",
                 self.weather_x + 12,
                 self.weather_y + self.weather_h - 35 - i * 20,
-                NEON_CYAN,
+                F1_LIGHT_GRAY,
                 10,
                 anchor_x="left",
                 anchor_y="top",
@@ -276,7 +302,7 @@ class F1ReplayWindow(arcade.Window):
         self.driver_box_radius = 10  # Rounded corner radius
         self.max_driver_boxes = 1  # Show only selected driver
 
-        # Create text objects for each driver box - NEON STYLE
+        # Create text objects for each driver box
         self.driver_boxes = []
         for i in range(self.max_driver_boxes):
             box = {
@@ -284,7 +310,7 @@ class F1ReplayWindow(arcade.Window):
                     "",
                     0,
                     0,
-                    NEON_PINK,
+                    F1_WHITE,
                     16,
                     bold=True,
                     anchor_x="left",
@@ -295,7 +321,7 @@ class F1ReplayWindow(arcade.Window):
                         "",
                         0,
                         0,
-                        NEON_CYAN,
+                        F1_LIGHT_GRAY,
                         13,
                         anchor_x="left",
                         anchor_y="top",
@@ -303,21 +329,21 @@ class F1ReplayWindow(arcade.Window):
                     for _ in range(5)
                 ],
                 "throttle_pct": arcade.Text(
-                    "", 0, 0, NEON_GREEN, 8, bold=True, anchor_x="center"
+                    "", 0, 0, DRS_GREEN, 8, bold=True, anchor_x="center"
                 ),
                 "brake_pct": arcade.Text(
-                    "", 0, 0, NEON_PINK, 8, bold=True, anchor_x="center"
+                    "", 0, 0, F1_RED, 8, bold=True, anchor_x="center"
                 ),
             }
             self.driver_boxes.append(box)
 
-        # Interval gap text objects (20 for leaderboard rows) - NEON
+        # Interval gap text objects (20 for leaderboard rows)
         self.gap_texts = [
             arcade.Text(
                 "",
                 0,
                 0,
-                NEON_YELLOW,
+                F1_LIGHT_GRAY,
                 12,
                 anchor_x="right",
             )
@@ -394,18 +420,18 @@ class F1ReplayWindow(arcade.Window):
 
         frame = self.frames[int(self.frame_idx)]
 
-        # Track look (enhanced multi-layer racing line)
+        # Track - F1 broadcast style (clean, professional)
         if len(self.track_pts_screen) >= 2:
-            # Outer glow (subtle depth effect)
-            arcade.draw_line_strip(self.track_pts_screen, (40, 40, 45), 16)
-            # Base layer (dark foundation)
-            arcade.draw_line_strip(self.track_pts_screen, (25, 25, 30), 12)
-            # Mid layer (provides depth)
-            arcade.draw_line_strip(self.track_pts_screen, (80, 80, 90), 6)
-            # Highlight line (crisp center line)
-            arcade.draw_line_strip(self.track_pts_screen, (220, 220, 230), 2)
+            # Track shadow/outline
+            arcade.draw_line_strip(self.track_pts_screen, (30, 30, 35), 12)
+            # Main track surface
+            arcade.draw_line_strip(self.track_pts_screen, (55, 55, 60), 8)
+            # Racing line
+            arcade.draw_line_strip(self.track_pts_screen, (100, 100, 105), 3)
+            # Center line
+            arcade.draw_line_strip(self.track_pts_screen, (140, 140, 145), 1)
 
-        # Cars
+        # Cars - clean F1 broadcast style
         for drv, st in frame["drivers"].items():
             sx, sy = world_to_screen(
                 st["x"], st["y"], self.world_scale, self.world_tx, self.world_ty
@@ -415,9 +441,13 @@ class F1ReplayWindow(arcade.Window):
             r = 6
             if self.selected_driver == drv:
                 r = 8
-                arcade.draw_circle_outline(sx, sy, 12, arcade.color.WHITE, 2)
+                # Selected driver highlight ring
+                arcade.draw_circle_outline(sx, sy, 12, F1_WHITE, 2)
 
+            # Car dot with team color
             arcade.draw_circle_filled(sx, sy, r, col)
+            # Small white highlight
+            arcade.draw_circle_filled(sx - 1, sy + 1, 2, (255, 255, 255, 120))
 
         # HUD - Lap counter and race time
         # Calculate current lap from leader
@@ -466,25 +496,8 @@ class F1ReplayWindow(arcade.Window):
             self._draw_progress_bar(frame)
 
     def _draw_leaderboard(self, frame):
-        # NEON Panel with rounded corners and glow effect
-        # Outer glow
-        draw_rounded_rectangle(
-            self.lb_x - 3, self.lb_y - 3,
-            self.lb_w + 6, self.lb_h + 6,
-            (*NEON_PINK[:3], 25), self.lb_radius + 2
-        )
-        # Panel background
-        draw_rounded_rectangle(
-            self.lb_x, self.lb_y,
-            self.lb_w, self.lb_h,
-            PANEL_BG, self.lb_radius
-        )
-        # Neon border
-        draw_rounded_rectangle_outline(
-            self.lb_x, self.lb_y,
-            self.lb_w, self.lb_h,
-            NEON_CYAN, self.lb_radius, 1
-        )
+        # F1 Broadcast style panel with red accent
+        draw_f1_panel(self.lb_x, self.lb_y, self.lb_w, self.lb_h, 4)
 
         # Order by position (P1..)
         ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
@@ -493,9 +506,7 @@ class F1ReplayWindow(arcade.Window):
         if self.selected_driver is None and ordered:
             self.selected_driver = ordered[0][0]
 
-        # Lap header - NEON STYLE
-        leader_lap = int(ordered[0][1].get("lap", 0)) if ordered else 0
-        max_lap = max(int(st.get("lap", 0)) for _, st in ordered) if ordered else 0
+        # Title
         self.lb_title.text = "LEADERBOARD"
         self.lb_title.draw()
 
@@ -509,9 +520,9 @@ class F1ReplayWindow(arcade.Window):
         # Row start (top anchor)
         top_y = self.lb_y + self.lb_h - self.lb_title_h - 8
 
-        # Columns (tuned for narrower leaderboard)
+        # Columns
         x_text = self.lb_x + self.lb_padding
-        x_gap = self.lb_x + self.lb_w - 90  # interval column
+        x_gap = self.lb_x + self.lb_w - 90
         x_tyre = self.lb_x + self.lb_w - 52
         x_drs = self.lb_x + self.lb_w - 20
 
@@ -525,20 +536,14 @@ class F1ReplayWindow(arcade.Window):
                 (self.lb_x + 6, row_bottom, self.lb_x + self.lb_w - 6, row_top)
             )
 
-            # NEON Position-based color gradient (P1-P3 get special colors)
+            # F1 broadcast style row backgrounds
             pos = int(st["pos"])
 
-            # Check if this driver has fastest lap - neon purple indicator
-            if drv == self.fastest_lap_driver:
-                pos_bg = (*NEON_PURPLE[:3], 80)  # Neon purple for fastest lap
-            elif pos == 1:
-                pos_bg = (*NEON_YELLOW[:3], 50)  # Neon yellow for P1
-            elif pos == 2:
-                pos_bg = (*NEON_CYAN[:3], 35)  # Neon cyan for P2
-            elif pos == 3:
-                pos_bg = (*NEON_ORANGE[:3], 30)  # Neon orange for P3
+            # Alternating row backgrounds for readability
+            if idx % 2 == 0:
+                row_bg = (35, 35, 45, 200)
             else:
-                pos_bg = (40, 20, 60, 25)  # Subtle purple for others
+                row_bg = (28, 28, 38, 200)
 
             rect = arcade.XYWH(
                 (self.lb_x + self.lb_x + self.lb_w) / 2,
@@ -546,19 +551,19 @@ class F1ReplayWindow(arcade.Window):
                 self.lb_w - 12,
                 self.lb_row_h - 2,
             )
-            arcade.draw_rect_filled(rect, pos_bg)
+            arcade.draw_rect_filled(rect, row_bg)
 
-            # Team color left border (3px wide)
+            # Team color left accent bar (F1 signature style)
             col = self.driver_colors.get(drv, arcade.color.WHITE)
             arcade.draw_lrbt_rectangle_filled(
                 self.lb_x + 6,
-                self.lb_x + 9,
-                row_bottom,
-                row_top,
+                self.lb_x + 10,
+                row_bottom + 2,
+                row_top - 2,
                 col,
             )
 
-            # NEON Hover highlight
+            # Hover highlight
             if self.hover_index == idx:
                 rect = arcade.XYWH(
                     (self.lb_x + self.lb_x + self.lb_w) / 2,
@@ -566,9 +571,9 @@ class F1ReplayWindow(arcade.Window):
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
-                arcade.draw_rect_filled(rect, (*NEON_CYAN[:3], 40))
+                arcade.draw_rect_filled(rect, (255, 255, 255, 25))
 
-            # NEON Selected highlight
+            # Selected highlight (red tint like F1 TV)
             if self.selected_driver == drv:
                 rect = arcade.XYWH(
                     (self.lb_x + self.lb_x + self.lb_w) / 2,
@@ -576,33 +581,39 @@ class F1ReplayWindow(arcade.Window):
                     self.lb_w - 12,
                     self.lb_row_h - 2,
                 )
-                arcade.draw_rect_filled(rect, (*NEON_PINK[:3], 60))
+                arcade.draw_rect_filled(rect, (*F1_RED[:3], 50))
+
+            # Position number with special colors for podium
+            if drv == self.fastest_lap_driver:
+                pos_color = FASTEST_PURPLE
+            elif pos == 1:
+                pos_color = P1_GOLD
+            elif pos == 2:
+                pos_color = P2_SILVER
+            elif pos == 3:
+                pos_color = P3_BRONZE
+            else:
+                pos_color = F1_WHITE
 
             # Driver text
-            self.lb_rows[idx].text = f"{int(st['pos']):>2}. {drv}"
-            self.lb_rows[idx].x = x_text + 4
+            self.lb_rows[idx].text = f"{pos:>2}. {drv}"
+            self.lb_rows[idx].x = x_text + 6
             self.lb_rows[idx].y = row_top - 4
-            self.lb_rows[idx].color = NEON_CYAN
+            self.lb_rows[idx].color = pos_color
             self.lb_rows[idx].draw()
 
+            # Gap/interval
             if idx == 0:
                 gap_str = "LEADER"
-                self.gap_texts[idx].color = NEON_CYAN
+                self.gap_texts[idx].color = F1_WHITE
             else:
                 gap_m = max(0.0, prog_list[idx - 1] - prog_list[idx])
-
                 spd_ahead_mps = max(spd_list_kmh[idx - 1] / 3.6, 1.0)
                 spd_this_mps = max(spd_list_kmh[idx] / 3.6, 1.0)
                 avg_speed_mps = max(0.5 * (spd_ahead_mps + spd_this_mps), 1.0)
-
                 gap_s = gap_m / avg_speed_mps
-
-                # Optional: avoid ugly "+0.0" flicker
-                # if gap_s < 0.05:
-                #     gap_s = 0.0
-
                 gap_str = f"+{gap_s:.1f}"
-                self.gap_texts[idx].color = NEON_YELLOW
+                self.gap_texts[idx].color = INTERVAL_YELLOW
 
             self.gap_texts[idx].text = gap_str
             self.gap_texts[idx].x = x_gap
@@ -614,21 +625,16 @@ class F1ReplayWindow(arcade.Window):
             tex = self.tyre_textures.get(key) or self.tyre_textures.get("unknown")
             if tex is not None:
                 rect = arcade.XYWH(
-                    x_tyre,
-                    row_cy,
-                    self.tyre_icon_size,
-                    self.tyre_icon_size,
+                    x_tyre, row_cy, self.tyre_icon_size, self.tyre_icon_size,
                 )
                 arcade.draw_texture_rect(rect=rect, texture=tex, angle=0, alpha=255)
 
-            # DRS indicator dot - NEON
+            # DRS indicator
             drs_on = _drs_is_active(int(st.get("drs", 0)))
             if drs_on:
-                # Glowing neon green
-                arcade.draw_circle_filled(x_drs, row_cy, 7, (*NEON_GREEN[:3], 60))
-                arcade.draw_circle_filled(x_drs, row_cy, 5, NEON_GREEN)
+                arcade.draw_circle_filled(x_drs, row_cy, 5, DRS_GREEN)
             else:
-                arcade.draw_circle_filled(x_drs, row_cy, 5, (60, 40, 80))
+                arcade.draw_circle_filled(x_drs, row_cy, 4, F1_GRAY)
 
         # Clear unused rows
         for j in range(len(ordered), 20):
@@ -636,24 +642,10 @@ class F1ReplayWindow(arcade.Window):
             self.gap_texts[j].text = ""
 
     def _draw_weather(self, frame):
-        # NEON Weather box with rounded corners and glow
-        # Outer glow
-        draw_rounded_rectangle(
-            self.weather_x - 3, self.weather_y - 3,
-            self.weather_w + 6, self.weather_h + 6,
-            (*NEON_CYAN[:3], 20), self.weather_radius + 2
-        )
-        # Background
-        draw_rounded_rectangle(
+        # F1 broadcast style weather panel
+        draw_f1_panel(
             self.weather_x, self.weather_y,
-            self.weather_w, self.weather_h,
-            PANEL_BG, self.weather_radius
-        )
-        # Neon border
-        draw_rounded_rectangle_outline(
-            self.weather_x, self.weather_y,
-            self.weather_w, self.weather_h,
-            NEON_CYAN, self.weather_radius, 1
+            self.weather_w, self.weather_h, 4
         )
 
         self.weather_title.draw()
@@ -719,27 +711,21 @@ class F1ReplayWindow(arcade.Window):
         # Driver color
         driver_col = self.driver_colors.get(drv, arcade.color.WHITE)
 
-        # NEON Box with rounded corners and glow effect
-        # Outer glow (driver color tinted)
-        draw_rounded_rectangle(
-            box_x - 3, box_y - 3,
-            self.driver_box_w + 6, self.driver_box_h + 6,
-            (*driver_col[:3], 30), self.driver_box_radius + 2
-        )
-        # Background
-        draw_rounded_rectangle(
+        # F1 broadcast style driver panel
+        draw_f1_panel(
             box_x, box_y,
-            self.driver_box_w, self.driver_box_h,
-            PANEL_BG, self.driver_box_radius
-        )
-        # Neon border
-        draw_rounded_rectangle_outline(
-            box_x, box_y,
-            self.driver_box_w, self.driver_box_h,
-            NEON_CYAN, self.driver_box_radius, 1
+            self.driver_box_w, self.driver_box_h, 4,
+            show_red_accent=False  # Use team color instead
         )
 
-        # Colored accent bar on left (inside the rounded rect)
+        # Team color accent bar on top (instead of red)
+        arcade.draw_lrbt_rectangle_filled(
+            box_x, box_x + self.driver_box_w,
+            box_y + self.driver_box_h - 3, box_y + self.driver_box_h,
+            driver_col,
+        )
+
+        # Team color left accent bar
         arcade.draw_lrbt_rectangle_filled(
             box_x + 4,
             box_x + 8,
@@ -809,44 +795,26 @@ class F1ReplayWindow(arcade.Window):
                 box["lines"][i].y = box_y + self.driver_box_h - 35 - i * 24
                 box["lines"][i].draw()
 
-            # NEON Throttle and brake bars (vertical, on the right)
+            # F1 broadcast style throttle and brake bars
             bar_w = 35
             bar_h = 120
             bar_x = box_x + self.driver_box_w - 110
             bar_y = box_y + 20
 
-            # Throttle bar (neon green)
+            # Throttle bar background
             arcade.draw_lrbt_rectangle_filled(
-                bar_x,
-                bar_x + bar_w,
-                bar_y,
-                bar_y + bar_h,
-                (20, 30, 25),
+                bar_x, bar_x + bar_w, bar_y, bar_y + bar_h,
+                F1_DARK_GRAY,
             )
             if throttle_val > 0:
                 fill_h = (throttle_val / 100.0) * bar_h
-                # Neon green glow
                 arcade.draw_lrbt_rectangle_filled(
-                    bar_x - 2,
-                    bar_x + bar_w + 2,
-                    bar_y,
-                    bar_y + fill_h,
-                    (*NEON_GREEN[:3], 40),
-                )
-                arcade.draw_lrbt_rectangle_filled(
-                    bar_x,
-                    bar_x + bar_w,
-                    bar_y,
-                    bar_y + fill_h,
-                    NEON_GREEN,
+                    bar_x, bar_x + bar_w, bar_y, bar_y + fill_h,
+                    DRS_GREEN,
                 )
             arcade.draw_lrbt_rectangle_outline(
-                bar_x,
-                bar_x + bar_w,
-                bar_y,
-                bar_y + bar_h,
-                (*NEON_GREEN[:3], 150),
-                1,
+                bar_x, bar_x + bar_w, bar_y, bar_y + bar_h,
+                F1_GRAY, 1,
             )
 
             # Throttle label
@@ -855,39 +823,21 @@ class F1ReplayWindow(arcade.Window):
             box["throttle_pct"].y = bar_y + bar_h + 8
             box["throttle_pct"].draw()
 
-            # Brake bar (neon pink/red)
+            # Brake bar background
             brake_x = bar_x + bar_w + 15
             arcade.draw_lrbt_rectangle_filled(
-                brake_x,
-                brake_x + bar_w,
-                bar_y,
-                bar_y + bar_h,
-                (30, 20, 25),
+                brake_x, brake_x + bar_w, bar_y, bar_y + bar_h,
+                F1_DARK_GRAY,
             )
             if brake_val > 0:
                 fill_h = (brake_val / 100.0) * bar_h
-                # Neon pink glow
                 arcade.draw_lrbt_rectangle_filled(
-                    brake_x - 2,
-                    brake_x + bar_w + 2,
-                    bar_y,
-                    bar_y + fill_h,
-                    (*NEON_PINK[:3], 40),
-                )
-                arcade.draw_lrbt_rectangle_filled(
-                    brake_x,
-                    brake_x + bar_w,
-                    bar_y,
-                    bar_y + fill_h,
-                    NEON_PINK,
+                    brake_x, brake_x + bar_w, bar_y, bar_y + fill_h,
+                    F1_RED,
                 )
             arcade.draw_lrbt_rectangle_outline(
-                brake_x,
-                brake_x + bar_w,
-                bar_y,
-                bar_y + bar_h,
-                (*NEON_PINK[:3], 150),
-                1,
+                brake_x, brake_x + bar_w, bar_y, bar_y + bar_h,
+                F1_GRAY, 1,
             )
 
             # Brake label
@@ -897,90 +847,33 @@ class F1ReplayWindow(arcade.Window):
             box["brake_pct"].draw()
 
     def _draw_progress_bar(self, frame):
-        # RETRO SEGMENTED Progress bar at bottom
+        # F1 broadcast style progress bar - clean and simple
         bar_w = 700
-        bar_h = 14
+        bar_h = 8
         bar_x = (self.width - bar_w) / 2
         bar_y = 20
-        segment_count = 50
-        segment_w = bar_w / segment_count
-        segment_gap = 2
-
-        # Outer neon glow
-        arcade.draw_lrbt_rectangle_filled(
-            bar_x - 4,
-            bar_x + bar_w + 4,
-            bar_y - 4,
-            bar_y + bar_h + 4,
-            (*NEON_CYAN[:3], 30),
-        )
 
         # Background
         arcade.draw_lrbt_rectangle_filled(
-            bar_x,
-            bar_x + bar_w,
-            bar_y,
-            bar_y + bar_h,
-            (15, 5, 25),
+            bar_x, bar_x + bar_w, bar_y, bar_y + bar_h,
+            F1_DARK_GRAY,
         )
 
         # Progress calculation
         progress = self.frame_idx / max(self.n_frames - 1, 1)
-        filled_segments = int(progress * segment_count)
+        fill_w = progress * bar_w
 
-        # Draw segmented progress
-        for i in range(segment_count):
-            seg_x = bar_x + i * segment_w
+        # Filled portion (F1 red)
+        if fill_w > 0:
+            arcade.draw_lrbt_rectangle_filled(
+                bar_x, bar_x + fill_w, bar_y, bar_y + bar_h,
+                F1_RED,
+            )
 
-            if i < filled_segments:
-                # Color gradient: cyan -> pink -> magenta
-                t = i / segment_count
-                if t < 0.5:
-                    # Cyan to pink
-                    r = int(t * 2 * 255)
-                    g = int(255 - t * 2 * 255)
-                    b = 255
-                else:
-                    # Pink to magenta
-                    r = 255
-                    g = int((1 - t) * 2 * 100)
-                    b = int(128 + (t - 0.5) * 2 * 127)
-
-                color = (r, g, b)
-                # Glow behind segment
-                arcade.draw_lrbt_rectangle_filled(
-                    seg_x,
-                    seg_x + segment_w - segment_gap,
-                    bar_y - 1,
-                    bar_y + bar_h + 1,
-                    (*color, 80),
-                )
-                # Segment
-                arcade.draw_lrbt_rectangle_filled(
-                    seg_x,
-                    seg_x + segment_w - segment_gap,
-                    bar_y + 1,
-                    bar_y + bar_h - 1,
-                    color,
-                )
-            else:
-                # Empty segment (dark)
-                arcade.draw_lrbt_rectangle_filled(
-                    seg_x,
-                    seg_x + segment_w - segment_gap,
-                    bar_y + 1,
-                    bar_y + bar_h - 1,
-                    (30, 15, 40),
-                )
-
-        # Neon border
+        # Border
         arcade.draw_lrbt_rectangle_outline(
-            bar_x,
-            bar_x + bar_w,
-            bar_y,
-            bar_y + bar_h,
-            NEON_CYAN,
-            1,
+            bar_x, bar_x + bar_w, bar_y, bar_y + bar_h,
+            F1_GRAY, 1,
         )
 
         # Store bar bounds for click detection
