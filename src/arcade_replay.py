@@ -585,11 +585,23 @@ class F1ReplayWindow(arcade.Window):
 
         panel_x = self.width - panel_w - 20
 
-        # F1 Broadcast style panel with red accent
-        draw_f1_panel(panel_x, self.lb_y, panel_w, self.lb_h, 4)
-
-        # Order by position (P1..)
+        # Calculate actual panel height based on number of drivers
         ordered = sorted(frame["drivers"].items(), key=lambda kv: kv[1]["pos"])
+        num_drivers = min(len(ordered), 20)
+
+        # Height = title area + rows + bottom padding
+        # Title area: 32 (title_h) + 8 (gap to first row)
+        # Rows: num_drivers * 25 (row_h)
+        # Bottom padding: 15
+        panel_h = self.lb_title_h + 8 + num_drivers * self.lb_row_h + 15
+
+        # Anchor from top (keep top position same as original)
+        # Original top was at: self.lb_y + self.lb_h = 50 + (height - 120) = height - 70
+        panel_top = self.height - 70
+        panel_y = panel_top - panel_h
+
+        # F1 Broadcast style panel with red accent
+        draw_f1_panel(panel_x, panel_y, panel_w, panel_h, 4)
 
         # Default selection = leader
         if self.selected_driver is None and ordered:
@@ -598,12 +610,12 @@ class F1ReplayWindow(arcade.Window):
         # Title (same layout as weather box) - use Text object for performance
         self.lb_title.text = "LEADERBOARD" if not self.leaderboard_collapsed else "LB"
         self.lb_title.x = panel_x + 12
-        self.lb_title.y = self.lb_y + self.lb_h - 12
+        self.lb_title.y = panel_y + panel_h - 12
         self.lb_title.draw()
 
         # Draw collapse/expand arrow button
         arrow_x = panel_x + panel_w - 20
-        arrow_y = self.lb_y + self.lb_h - 16
+        arrow_y = panel_y + panel_h - 16
         arrow_size = 6
 
         # Store arrow click area for click detection
@@ -640,7 +652,7 @@ class F1ReplayWindow(arcade.Window):
         self._lb_rects = []
 
         # Row start (top anchor)
-        top_y = self.lb_y + self.lb_h - self.lb_title_h - 8
+        top_y = panel_y + panel_h - self.lb_title_h - 8
 
         # Columns (adjust for collapsed state)
         x_text = panel_x + self.lb_padding
