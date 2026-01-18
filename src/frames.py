@@ -131,7 +131,10 @@ def build_frames(
 
     # Build a list of fastest lap events (when each new fastest lap was set)
     # This tracks the progression of fastest laps during the session
-    fastest_lap_events = []  # [(session_time, driver, lap_time, lap_num), ...]
+    # We track ALL fastest lap changes (including baseline) for display purposes,
+    # but mark which ones should trigger the banner (only improvements, not the first lap)
+    fastest_lap_timeline = []  # All fastest lap holders in chronological order
+    fastest_lap_events = []  # Only improvements that trigger the banner
     current_fastest = float("inf")
 
     if driver_sectors:
@@ -147,15 +150,30 @@ def build_frames(
         all_lap_completions.sort(key=lambda x: x[0])
 
         # Track when fastest lap improved
+        first_lap_seen = False
         for s3_time, drv, lap_time, lap_num in all_lap_completions:
             if lap_time < current_fastest:
-                current_fastest = lap_time
-                fastest_lap_events.append({
+                # Record in timeline (for tracking who holds fastest at each time)
+                fastest_lap_timeline.append({
                     "time": s3_time,
                     "driver": drv,
                     "lap_time": lap_time,
                     "lap_num": lap_num,
                 })
+
+                if first_lap_seen:
+                    # Only record as banner-triggering event if it beats a previous lap
+                    fastest_lap_events.append({
+                        "time": s3_time,
+                        "driver": drv,
+                        "lap_time": lap_time,
+                        "lap_num": lap_num,
+                    })
+                else:
+                    # First lap sets the baseline but doesn't trigger the banner
+                    first_lap_seen = True
+
+                current_fastest = lap_time
 
     # Track previous positions for overtake detection
     prev_positions = {}
@@ -299,18 +317,26 @@ def build_frames(
         if race_control is not None:
             race_messages = _get_active_messages(t, race_control)
 
-        # Fastest lap info (for banner)
-        # Find the current fastest lap at this point in time
+        # Fastest lap info (for banner and display)
+        # Use timeline to track who holds fastest at this time
+        # Use events to determine when to show the banner (only for improvements)
         current_fl_driver = None
         current_fl_time = None
         current_fl_lap = None
-        fl_set_time = None
 
+        # Find who holds the fastest lap at this time (from timeline)
+        for entry in fastest_lap_timeline:
+            if entry["time"] <= t:
+                current_fl_driver = entry["driver"]
+                current_fl_time = entry["lap_time"]
+                current_fl_lap = entry["lap_num"]
+            else:
+                break  # Timeline is sorted by time
+
+        # Check if a banner-triggering event occurred recently
+        fl_set_time = None
         for event in fastest_lap_events:
             if event["time"] <= t:
-                current_fl_driver = event["driver"]
-                current_fl_time = event["lap_time"]
-                current_fl_lap = event["lap_num"]
                 fl_set_time = event["time"]
             else:
                 break  # Events are sorted by time
@@ -322,7 +348,8 @@ def build_frames(
             "is_new": False,  # True if just set (within 5 seconds)
         }
 
-        # Mark as new if the fastest lap was set within the last 5 seconds
+        # Mark as new if a fastest lap EVENT was set within the last 5 seconds
+        # (baseline laps don't trigger the banner, only improvements do)
         if fl_set_time is not None and 0 <= (t - fl_set_time) <= 5.0:
             fastest_lap_info["is_new"] = True
 
