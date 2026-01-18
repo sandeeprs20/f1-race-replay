@@ -308,6 +308,16 @@ class F1ReplayWindow(arcade.Window):
         self.tyre_icon_size = 16  # px
 
         # ---------------------------
+        # Pixel car texture (for UI decorations)
+        # ---------------------------
+        pixel_car_path = os.path.join(base_dir, "images", "pixel_car.png")
+        self.pixel_car_texture = None
+        if os.path.exists(pixel_car_path):
+            self.pixel_car_texture = arcade.load_texture(pixel_car_path)
+        self.pixel_car_size = 40  # px height for progress bar
+        self.pixel_car_size_small = 24  # px height for telemetry header
+
+        # ---------------------------
         # Compact Weather box (top left, below lap info)
         # ---------------------------
         self.weather_w = 180
@@ -1060,11 +1070,11 @@ class F1ReplayWindow(arcade.Window):
         box["brake_pct"].draw()
 
     def _draw_progress_bar(self, frame):
-        # F1 broadcast style progress bar - clean and simple
+        # F1 broadcast style progress bar with pixel car playhead
         bar_w = 700
         bar_h = 8
         bar_x = (self.width - bar_w) / 2
-        bar_y = 20
+        bar_y = 25  # Raised slightly to make room for car
 
         # Background
         arcade.draw_lrbt_rectangle_filled(
@@ -1099,8 +1109,23 @@ class F1ReplayWindow(arcade.Window):
             1,
         )
 
-        # Store bar bounds for click detection
-        self._progress_bar_rect = (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h)
+        # Draw pixel car as playhead
+        if self.pixel_car_texture is not None:
+            # Calculate car position (car center at progress point)
+            car_x = bar_x + fill_w
+            car_y = bar_y + bar_h / 2
+
+            # Calculate car dimensions maintaining aspect ratio
+            aspect_ratio = self.pixel_car_texture.width / self.pixel_car_texture.height
+            car_h = self.pixel_car_size
+            car_w = car_h * aspect_ratio
+
+            # Draw the car
+            rect = arcade.XYWH(car_x, car_y + car_h / 2 + 2, car_w, car_h)
+            arcade.draw_texture_rect(rect=rect, texture=self.pixel_car_texture, angle=0, alpha=255)
+
+        # Store bar bounds for click detection (include car area)
+        self._progress_bar_rect = (bar_x, bar_y - 10, bar_x + bar_w, bar_y + bar_h + self.pixel_car_size + 10)
 
     def _draw_track_status(self, frame):
         """Draw track status indicator (GREEN/YELLOW/RED/SC/VSC)."""
