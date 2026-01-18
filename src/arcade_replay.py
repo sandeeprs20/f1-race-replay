@@ -1018,7 +1018,7 @@ class F1ReplayWindow(arcade.Window):
         bar_w = 30
         bar_h = 100
         bar_x = box_x + self.driver_box_w - 90
-        bar_y = box_y + 15
+        bar_y = box_y + 200
 
         # Throttle bar background
         arcade.draw_lrbt_rectangle_filled(
