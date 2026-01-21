@@ -12,7 +12,15 @@ from src.track import (
     build_world_to_screen_transform,
 )
 from src.arcade_replay import F1ReplayWindow
-from src.f1_data import enable_cache, load_session, get_session_info, get_driver_status
+from src.f1_data import (
+    enable_cache,
+    load_session,
+    get_session_info,
+    get_driver_status,
+    extract_race_control_messages,
+    extract_sector_times,
+    extract_pit_stops,
+)
 from src.team_colors import build_driver_colors
 
 
@@ -146,12 +154,37 @@ def main():
         except Exception:
             pass
 
+        # Extract race control messages (flags, safety car, penalties, etc.)
+        print("\nExtracting race control messages...")
+        race_control = extract_race_control_messages(session)
+        print(f"  Track status events: {len(race_control.get('track_status', []))}")
+        print(f"  Blue flags: {len(race_control.get('blue_flags', []))}")
+        print(f"  Penalties: {len(race_control.get('penalties', []))}")
+        print(f"  Track limits: {len(race_control.get('track_limits', []))}")
+
+        # Extract sector times
+        print("\nExtracting sector times...")
+        sector_data = extract_sector_times(session)
+        driver_sectors, overall_bests = sector_data
+        print(f"  Drivers with sector data: {len(driver_sectors)}")
+        if overall_bests.get("lap"):
+            print(f"  Fastest lap: {overall_bests['fastest_driver']} - {overall_bests['lap']:.3f}s (Lap {overall_bests['fastest_lap_num']})")
+
+        # Extract pit stop data
+        print("\nExtracting pit stop data...")
+        pit_data = extract_pit_stops(session)
+        print(f"  Pit stops: {len(pit_data.get('pit_stops', []))}")
+        print(f"  Top speeds recorded: {len(pit_data.get('top_speeds', []))}")
+
         frames = build_frames(
             resampled,
             timeline,
             lap_length,
             tyre_map=tyre_map,
             weather_data=weather_data,
+            race_control=race_control,
+            sector_data=sector_data,
+            pit_data=pit_data,
         )
 
         print("\n=== FRAMES BUILT ===")
@@ -190,6 +223,9 @@ def main():
     driver_status = get_driver_status(session)
     print(f"Driver status: {driver_status}")
 
+    # Extract pit data for UI (need to do this even on cache hit)
+    pit_data = extract_pit_stops(session)
+
     window = F1ReplayWindow(
         frames=frames,
         track_xy=(x_track, y_track),
@@ -204,6 +240,7 @@ def main():
         total_laps=info.total_laps,
         driver_status=driver_status,
         fullscreen=args.fullscreen,
+        pit_data=pit_data,
     )
 
     arcade.run()

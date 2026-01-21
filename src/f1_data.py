@@ -37,7 +37,7 @@ class SessionInfo:
     # Name of the event (Bahrain Grand Prix)
     event_name: str
 
-    # Name of locatiojn of the circuit
+    # Name of location of the circuit
     circuit_name: str
 
     # List of driver abbreviations (VER, HAM)
@@ -200,3 +200,334 @@ def get_session_info(session) -> SessionInfo:
         # Total laps
         total_laps=total_laps,
     )
+
+
+def extract_race_control_messages(session) -> dict:
+    """
+    Extract race control messages from session.
+
+    Returns:
+        dict with keys:
+        - "track_status": list of {"t": float, "status": str, "message": str}
+        - "blue_flags": list of {"t": float, "driver": str, "message": str}
+        - "penalties": list of {"t": float, "driver": str, "message": str}
+        - "track_limits": list of {"t": float, "driver": str, "message": str}
+    """
+    result = {
+        "track_status": [],
+        "blue_flags": [],
+        "penalties": [],
+        "track_limits": [],
+    }
+
+    try:
+        rcm = session.race_control_messages
+        if rcm is None or rcm.empty:
+            return result
+
+        for _, row in rcm.iterrows():
+            # Get time in seconds
+            time_val = row.get("Time", None)
+            if time_val is None:
+                continue
+            t = time_val.total_seconds() if hasattr(time_val, "total_seconds") else float(time_val)
+
+            category = str(row.get("Category", "")).upper()
+            message = str(row.get("Message", ""))
+            flag = str(row.get("Flag", "")).upper()
+            driver = row.get("RacingNumber", None)
+
+            # Track status changes (flags, safety car)
+            if category == "FLAG" or "SAFETY CAR" in message.upper() or "VSC" in message.upper():
+                status = "GREEN"
+                if flag == "YELLOW" or "YELLOW" in message.upper():
+                    status = "YELLOW"
+                elif flag == "RED" or "RED FLAG" in message.upper():
+                    status = "RED"
+                elif "SAFETY CAR" in message.upper() and "VIRTUAL" not in message.upper():
+                    status = "SC"
+                elif "VSC" in message.upper() or "VIRTUAL SAFETY CAR" in message.upper():
+                    status = "VSC"
+                elif flag == "GREEN" or "GREEN" in message.upper():
+                    status = "GREEN"
+
+                result["track_status"].append({
+                    "t": t,
+                    "status": status,
+                    "message": message,
+                })
+
+            # Blue flags
+            if flag == "BLUE" or "BLUE FLAG" in message.upper():
+                result["blue_flags"].append({
+                    "t": t,
+                    "driver": str(driver) if driver else "",
+                    "message": message,
+                })
+
+            # Penalties
+            if "PENALTY" in message.upper() or "TIME PENALTY" in message.upper():
+                result["penalties"].append({
+                    "t": t,
+                    "driver": str(driver) if driver else "",
+                    "message": message,
+                })
+
+            # Track limits
+            if "TRACK LIMITS" in message.upper() or "DELETED" in message.upper():
+                result["track_limits"].append({
+                    "t": t,
+                    "driver": str(driver) if driver else "",
+                    "message": message,
+                })
+
+    except Exception:
+        pass
+
+    # Sort all lists by time
+    for key in result:
+        result[key].sort(key=lambda x: x["t"])
+
+    return result
+
+
+def extract_sector_times(session) -> tuple:
+    """
+    Extract sector times from session laps.
+
+    Returns:
+        tuple of (driver_sectors, overall_bests)
+
+        driver_sectors: dict[driver_code][lap_number] = {
+            "s1": float | None,
+            "s2": float | None,
+            "s3": float | None,
+            "s1_time": float | None,  # Session time when S1 completed
+            "s2_time": float | None,
+            "s3_time": float | None,
+            "lap_time": float | None,
+            "is_pb": bool
+        }
+
+        overall_bests: {
+            "s1": float | None,
+            "s2": float | None,
+            "s3": float | None,
+            "lap": float | None,
+            "fastest_driver": str | None,
+            "fastest_lap_num": int | None
+        }
+    """
+    driver_sectors = {}
+    overall_bests = {
+        "s1": None,
+        "s2": None,
+        "s3": None,
+        "lap": None,
+        "fastest_driver": None,
+        "fastest_lap_num": None,
+    }
+
+    try:
+        laps = session.laps
+        if laps is None or laps.empty:
+            return driver_sectors, overall_bests
+
+        for _, row in laps.iterrows():
+            driver = row.get("Driver", None)
+            if driver is None:
+                continue
+            driver = str(driver)
+
+            lap_num = row.get("LapNumber", None)
+            if lap_num is None:
+                continue
+            lap_num = int(lap_num)
+
+            if driver not in driver_sectors:
+                driver_sectors[driver] = {}
+
+            # Extract sector times (convert timedelta to seconds)
+            def to_seconds(val):
+                if val is None or (hasattr(val, "total_seconds") and val != val):  # NaT check
+                    return None
+                if hasattr(val, "total_seconds"):
+                    return val.total_seconds()
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+
+            s1 = to_seconds(row.get("Sector1Time", None))
+            s2 = to_seconds(row.get("Sector2Time", None))
+            s3 = to_seconds(row.get("Sector3Time", None))
+            lap_time = to_seconds(row.get("LapTime", None))
+
+            s1_session = to_seconds(row.get("Sector1SessionTime", None))
+            s2_session = to_seconds(row.get("Sector2SessionTime", None))
+            s3_session = to_seconds(row.get("Sector3SessionTime", None))
+
+            is_pb = bool(row.get("IsPersonalBest", False))
+
+            driver_sectors[driver][lap_num] = {
+                "s1": s1,
+                "s2": s2,
+                "s3": s3,
+                "s1_time": s1_session,
+                "s2_time": s2_session,
+                "s3_time": s3_session,
+                "lap_time": lap_time,
+                "is_pb": is_pb,
+            }
+
+            # Update overall bests
+            if s1 is not None and (overall_bests["s1"] is None or s1 < overall_bests["s1"]):
+                overall_bests["s1"] = s1
+            if s2 is not None and (overall_bests["s2"] is None or s2 < overall_bests["s2"]):
+                overall_bests["s2"] = s2
+            if s3 is not None and (overall_bests["s3"] is None or s3 < overall_bests["s3"]):
+                overall_bests["s3"] = s3
+            if lap_time is not None and (overall_bests["lap"] is None or lap_time < overall_bests["lap"]):
+                overall_bests["lap"] = lap_time
+                overall_bests["fastest_driver"] = driver
+                overall_bests["fastest_lap_num"] = lap_num
+
+    except Exception:
+        pass
+
+    return driver_sectors, overall_bests
+
+
+def extract_pit_stops(session) -> dict:
+    """
+    Extract pit stop data from session laps.
+
+    Returns:
+        dict with keys:
+        - "pit_stops": list of pit stop events sorted by time
+        - "stints": dict[driver] = list of stint info
+        - "max_speeds": dict[driver][lap] = max_speed
+    """
+    result = {
+        "pit_stops": [],
+        "stints": {},
+        "max_speeds": {},
+        "top_speeds": [],  # Top speeds overall
+    }
+
+    try:
+        laps = session.laps
+        if laps is None or laps.empty:
+            return result
+
+        # Track pit stops and stints per driver
+        driver_pits = {}
+        driver_stints = {}
+        driver_max_speeds = {}
+
+        for _, row in laps.iterrows():
+            driver = row.get("Driver", None)
+            if driver is None:
+                continue
+            driver = str(driver)
+
+            lap_num = row.get("LapNumber", None)
+            if lap_num is None:
+                continue
+            lap_num = int(lap_num)
+
+            # Initialize driver data
+            if driver not in driver_pits:
+                driver_pits[driver] = []
+            if driver not in driver_stints:
+                driver_stints[driver] = []
+            if driver not in driver_max_speeds:
+                driver_max_speeds[driver] = {}
+
+            # Check for pit stop (PitInTime or PitOutTime present)
+            pit_in = row.get("PitInTime", None)
+            pit_out = row.get("PitOutTime", None)
+
+            def to_seconds(val):
+                if val is None or (hasattr(val, "total_seconds") and val != val):
+                    return None
+                if hasattr(val, "total_seconds"):
+                    return val.total_seconds()
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+
+            pit_in_t = to_seconds(pit_in)
+            pit_out_t = to_seconds(pit_out)
+
+            if pit_in_t is not None or pit_out_t is not None:
+                compound = str(row.get("Compound", "")) or None
+                stint = int(row.get("Stint", 1)) if row.get("Stint") is not None else 1
+
+                duration = None
+                if pit_in_t is not None and pit_out_t is not None:
+                    duration = pit_out_t - pit_in_t
+
+                driver_pits[driver].append({
+                    "t_in": pit_in_t,
+                    "t_out": pit_out_t,
+                    "duration": duration,
+                    "driver": driver,
+                    "lap": lap_num,
+                    "compound": compound,
+                    "stint": stint,
+                })
+
+            # Track stint info
+            stint_num = int(row.get("Stint", 1)) if row.get("Stint") is not None else 1
+            tyre_life = int(row.get("TyreLife", 0)) if row.get("TyreLife") is not None else 0
+            compound = str(row.get("Compound", "")) or None
+
+            # Update or add stint
+            if stint_num > len(driver_stints[driver]):
+                driver_stints[driver].append({
+                    "stint": stint_num,
+                    "compound": compound,
+                    "start_lap": lap_num,
+                    "end_lap": lap_num,
+                    "tyre_life": tyre_life,
+                })
+            else:
+                idx = stint_num - 1
+                if 0 <= idx < len(driver_stints[driver]):
+                    driver_stints[driver][idx]["end_lap"] = lap_num
+                    driver_stints[driver][idx]["tyre_life"] = tyre_life
+
+            # Track max speed per lap from SpeedST (speed trap) if available
+            speed_st = row.get("SpeedST", None)
+            if speed_st is not None:
+                try:
+                    max_spd = float(speed_st)
+                    if max_spd > 0:
+                        driver_max_speeds[driver][lap_num] = max_spd
+                except (ValueError, TypeError):
+                    pass
+
+        # Consolidate pit stops
+        all_pits = []
+        for driver, pits in driver_pits.items():
+            all_pits.extend(pits)
+        all_pits.sort(key=lambda x: x["t_in"] or x["t_out"] or 0)
+
+        result["pit_stops"] = all_pits
+        result["stints"] = driver_stints
+        result["max_speeds"] = driver_max_speeds
+
+        # Calculate top speeds
+        all_speeds = []
+        for driver, laps_speeds in driver_max_speeds.items():
+            for lap, speed in laps_speeds.items():
+                all_speeds.append({"driver": driver, "lap": lap, "speed": speed})
+        all_speeds.sort(key=lambda x: x["speed"], reverse=True)
+        result["top_speeds"] = all_speeds[:10]  # Top 10
+
+    except Exception:
+        pass
+
+    return result
