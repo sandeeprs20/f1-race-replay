@@ -24,6 +24,68 @@ from src.f1_data import (
 from src.team_colors import build_driver_colors
 
 
+def run_analysis_mode(args):
+    """
+    Run tyre degradation analysis mode.
+
+    Loads session data, trains ML model, and launches analysis UI.
+    """
+    from src.ml.feature_engineering import extract_tyre_features
+    from src.ml.tyre_degradation import TyreDegradationModel
+    from src.analysis.analysis_window import TyreAnalysisWindow
+
+    cache_dir = enable_cache(".fastf1-cache")
+    print(f"FastF1 cache enabled: {cache_dir}")
+
+    print(f"\nLoading session: {args.year} R{args.round} {args.session}")
+    session = load_session(
+        args.year, args.round, args.session, force_reload=args.force
+    )
+    info = get_session_info(session)
+
+    print(f"\n=== SESSION LOADED ===")
+    print(f"Event:   {info.event_name}")
+    print(f"Session: {info.session_name}")
+    print(f"Circuit: {info.circuit_name}")
+    print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
+
+    # Extract features for ML
+    print("\nExtracting tyre features...")
+    features_df = extract_tyre_features(session)
+    print(f"  Extracted {len(features_df)} lap records")
+    print(f"  Valid laps: {len(features_df[features_df['is_valid']])}")
+    print(f"  Compounds: {features_df['compound'].unique().tolist()}")
+
+    if features_df.empty:
+        print("Error: No features extracted. Cannot run analysis.")
+        return
+
+    # Train model
+    print("\nTraining tyre degradation model...")
+    model = TyreDegradationModel()
+    stats = model.train(features_df)
+
+    if "error" in stats:
+        print(f"Warning: Model training issue - {stats['error']}")
+    else:
+        print(f"  Training samples: {stats['n_samples']}")
+        print(f"  Train R²: {stats['train_r2']:.3f}")
+        print(f"  Validation R²: {stats['val_r2']:.3f}")
+        print(f"  Validation RMSE: {stats['val_rmse']:.3f}s")
+
+    # Launch analysis UI
+    print("\nLaunching Tyre Analysis UI...")
+    window = TyreAnalysisWindow(
+        session=session,
+        features_df=features_df,
+        model=model,
+        session_info=info,
+        width=1200,
+        height=800,
+    )
+    arcade.run()
+
+
 def build_tyre_map(session):
     """
     Build tyre map:
@@ -71,8 +133,14 @@ def main():
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--fullscreen", action="store_true", help="Start in fullscreen mode")
+    parser.add_argument("--analysis", action="store_true", help="Open tyre analysis UI instead of replay")
 
     args = parser.parse_args()
+
+    # If analysis mode, run separate analysis flow
+    if args.analysis:
+        run_analysis_mode(args)
+        return
 
     cache_dir = enable_cache(".fastf1-cache")
     print(f"FastF1 cache enabled: {cache_dir}")
