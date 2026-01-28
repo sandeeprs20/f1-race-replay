@@ -1,0 +1,124 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #15151E;
+    overflow: hidden;
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+#replay-canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Loading overlay */
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: #15151E;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+#loading-overlay.hidden {
+    display: none;
+}
+
+.loader-content {
+    text-align: center;
+    color: #fff;
+}
+
+.loader-content h1 {
+    font-size: 32px;
+    color: #E10600;
+    margin-bottom: 30px;
+    letter-spacing: 4px;
+}
+
+#session-picker-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+#session-picker-container label {
+    font-size: 14px;
+    color: #B4B4B9;
+}
+
+#session-select {
+    width: 320px;
+    padding: 10px 14px;
+    font-size: 14px;
+    background: #26263E;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#session-select:focus {
+    outline: none;
+    border-color: #E10600;
+}
+
+#load-btn {
+    padding: 10px 32px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #E10600;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 1px;
+}
+
+#load-btn:disabled {
+    background: #444;
+    cursor: not-allowed;
+}
+
+#load-btn:hover:not(:disabled) {
+    background: #ff1a0d;
+}
+
+#load-progress {
+    margin-top: 20px;
+}
+
+#load-progress.hidden,
+.hidden {
+    display: none !important;
+}
+
+#load-status {
+    font-size: 13px;
+    color: #B4B4B9;
+    margin-bottom: 8px;
+}
+
+.progress-track {
+    width: 320px;
+    height: 6px;
+    background: #26263E;
+    border-radius: 3px;
+    margin: 0 auto;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #E10600;
+    border-radius: 3px;
+    transition: width 0.2s;
+}

@@ -22,6 +22,7 @@ from src.f1_data import (
     extract_pit_stops,
 )
 from src.team_colors import build_driver_colors
+from src.web_export import export_for_web
 
 
 def run_analysis_mode(args):
@@ -134,6 +135,7 @@ def main():
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--fullscreen", action="store_true", help="Start in fullscreen mode")
     parser.add_argument("--analysis", action="store_true", help="Open tyre analysis UI instead of replay")
+    parser.add_argument("--export-web", action="store_true", help="Export replay data as JSON for web frontend")
 
     args = parser.parse_args()
 
@@ -278,6 +280,24 @@ def main():
     x_track, y_track, _speed_track = get_reference_track_xy(session)
     xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
+    driver_colors = build_driver_colors(frames[0]["drivers"].keys())
+
+    # Extract pit data for UI (need to do this even on cache hit)
+    pit_data = extract_pit_stops(session)
+
+    # Web export mode
+    if args.export_web:
+        export_for_web(
+            frames=frames,
+            track_x=x_track,
+            track_y=y_track,
+            driver_colors=driver_colors,
+            session_info=info,
+            fps=args.fps,
+            pit_data=pit_data,
+        )
+        return
+
     # Use larger window size (close to fullscreen)
     screen_w, screen_h = 1400, 700
 
@@ -285,14 +305,9 @@ def main():
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
 
-    driver_colors = build_driver_colors(frames[0]["drivers"].keys())
-
     # Get driver finishing status (Finished, Retired, DNF, etc.)
     driver_status = get_driver_status(session)
     print(f"Driver status: {driver_status}")
-
-    # Extract pit data for UI (need to do this even on cache hit)
-    pit_data = extract_pit_stops(session)
 
     window = F1ReplayWindow(
         frames=frames,
