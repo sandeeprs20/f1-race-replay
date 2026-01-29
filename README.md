@@ -2,6 +2,9 @@
 
 A Formula 1 race replay visualizer that downloads real telemetry data via [FastF1](https://github.com/theOehrly/Fast-F1) and renders interactive, animated replays of any F1 session -- races, qualifying, sprint, and practice. The UI is inspired by the official F1 TV broadcast graphics.
 
+<img width="1915" height="1028" alt="image" src="https://github.com/user-attachments/assets/2cc53768-6c46-4ed5-a44c-c32d8fc5ba03" />
+
+
 ## Features
 
 - **Real telemetry data** -- pulls position, speed, gear, throttle, brake, and DRS data for every driver on track via the FIA API
