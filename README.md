@@ -1,6 +1,6 @@
 # F1 Race Replay
 
-A Formula 1 race replay visualizer that downloads real telemetry data via [FastF1](https://github.com/theOehrly/Fast-F1) and renders interactive, animated replays of any F1 session -- races, qualifying, sprint, and practice. The UI is inspired by the official F1 TV broadcast graphics.
+A Formula 1 race replay visualizer that downloads real telemetry data via [FastF1](https://github.com/theOehrly/Fast-F1) and renders interactive, animated replays of any F1 session -- races, qualifying, sprint, and practice. Available as both a Python desktop app (Arcade) and a web frontend. The UI is inspired by the official F1 TV broadcast graphics.
 
 <img width="1915" height="1028" alt="image" src="https://github.com/user-attachments/assets/2cc53768-6c46-4ed5-a44c-c32d8fc5ba03" />
 
@@ -22,6 +22,8 @@ A Formula 1 race replay visualizer that downloads real telemetry data via [FastF
 - **Playback controls** -- pause, seek, speed up/slow down (0.5x to 64x), restart
 - **Fullscreen support** -- resizable window with automatic UI repositioning
 - **Two-layer caching** -- FastF1 API cache + computed replay cache for instant loading after first run
+- **Web frontend** -- browser-based replay viewer with the same features as the desktop app
+- **Qualifying-specific UI** -- dedicated layout for qualifying sessions with live telemetry graphs, mini track view, and lap times leaderboard
 
 ## Tech Stack
 
@@ -67,7 +69,27 @@ python main.py --year 2024 --round 1 --force
 
 # Regenerate replay from cached telemetry
 python main.py --year 2024 --round 1 --refresh
+
+# Export session for web frontend
+python main.py --year 2024 --round 1 --session Q --export-web
 ```
+
+### Web Frontend
+
+The web frontend provides the same replay experience in your browser.
+
+```bash
+# 1. Export session data for web
+python main.py --year 2024 --round 1 --session Q --export-web
+
+# 2. Start a local web server
+cd web
+python -m http.server 8000
+
+# 3. Open http://localhost:8000 in your browser
+```
+
+Select a session from the dropdown and click **Load** to start the replay.
 
 ### CLI Arguments
 
@@ -80,6 +102,8 @@ python main.py --year 2024 --round 1 --refresh
 | `--force` | Force re-download from FIA API | `False` |
 | `--refresh` | Regenerate replay frames from cached data | `False` |
 | `--fullscreen` | Start in fullscreen mode | `False` |
+| `--export-web` | Export session data as JSON for web frontend | `False` |
+| `--analysis` | Open tyre degradation analysis UI | `False` |
 
 ### Keyboard Controls
 
@@ -93,6 +117,25 @@ python main.py --year 2024 --round 1 --refresh
 | `P` | Toggle progress bar |
 | `L` | Toggle leaderboard (expanded / collapsed) |
 | `F` / `F11` | Toggle fullscreen |
+
+## Qualifying Session UI
+
+When loading a qualifying session (`Q`, `Q1`, `Q2`, `Q3`), the web frontend automatically switches to a dedicated qualifying layout optimized for hot lap analysis:
+
+**Layout:**
+- **Mini Track View** (top-left) -- compact circuit map showing all drivers as team-colored dots, click to select a driver
+- **Weather Panel** (left) -- track/air temperature, humidity, rainfall status
+- **Driver Focus Panel** (left) -- selected driver's speed, gear, DRS, best lap time, current lap sector times with purple highlighting for session bests, tyre compound
+- **Live Telemetry Graphs** (center) -- two real-time graphs plotting data against lap distance:
+  - **Speed Graph** -- speed trace (km/h) throughout the lap
+  - **Throttle/Brake Graph** -- overlaid throttle (green) and brake (red) inputs
+- **Lap Times Leaderboard** (right) -- drivers sorted by best lap time, showing gap to P1, purple highlight for fastest, click to select driver
+
+**Features:**
+- Telemetry graphs update in real-time as the selected driver drives
+- Graphs reset automatically when the driver starts a new lap
+- Click on mini track dots or leaderboard rows to switch between drivers
+- Session time displayed instead of lap counter
 
 ## How It Works
 
@@ -128,11 +171,33 @@ f1-race-replay/
 │   ├── cache.py            # Pickle-based replay persistence
 │   ├── team_colors.py      # Driver/team color mapping
 │   ├── colors.py           # MD5-based fallback color generation
-│   └── tyres.py            # Tyre compound mapping
-├── images/
-│   ├── tyres/              # Tyre compound PNGs (soft, medium, hard, intermediate, wet)
-│   ├── weather/            # Weather condition icons
-│   └── pixel_car.png       # Pixelated F1 car for progress bar playhead
+│   ├── tyres.py            # Tyre compound mapping
+│   ├── web_export.py       # Export session data as JSON for web frontend
+│   ├── ml/                 # Machine learning modules
+│   │   ├── feature_engineering.py
+│   │   └── tyre_degradation.py
+│   └── analysis/           # Analysis UI modules
+│       ├── charts.py
+│       └── analysis_window.py
+├── web/                    # Web frontend
+│   ├── index.html          # Main HTML page
+│   ├── css/style.css       # Styles
+│   ├── js/
+│   │   ├── app.js          # Main application, event handling
+│   │   ├── renderer.js     # Race UI renderer
+│   │   ├── qualifying-renderer.js  # Qualifying UI renderer
+│   │   ├── qualifying-state.js     # Qualifying state with telemetry tracking
+│   │   ├── data-loader.js  # Chunk-based data loading
+│   │   ├── track-renderer.js
+│   │   ├── state.js        # Playback state management
+│   │   ├── panels/         # UI panel components
+│   │   └── qualifying/     # Qualifying-specific components
+│   │       ├── telemetry-graph.js  # Speed and throttle/brake graphs
+│   │       ├── mini-track.js       # Compact track view
+│   │       ├── lap-times-panel.js  # Best lap times leaderboard
+│   │       └── driver-focus.js     # Selected driver details
+│   └── assets/             # Images (tyres, weather icons, pixel car)
+├── images/                 # Desktop app assets
 ├── computed_data/          # Cached replay pickle files
 └── .fastf1-cache/          # FastF1 API data cache
 ```
