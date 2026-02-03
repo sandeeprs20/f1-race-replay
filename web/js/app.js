@@ -13,6 +13,13 @@ import { leaderboardRects, leaderboardArrowRect } from "./panels/leaderboard.js"
 import { progressBarRect } from "./panels/progress-bar.js";
 import { speedTrapArrowRect } from "./panels/speed-trap.js";
 
+// Qualifying UI imports (loaded dynamically)
+import { miniTrackClickRects } from "./qualifying/mini-track.js";
+import { lapTimesRects } from "./qualifying/lap-times-panel.js";
+
+// Qualifying session types
+const QUALIFYING_SESSIONS = ["Q", "Q1", "Q2", "Q3"];
+
 class F1ReplayApp {
     constructor() {
         this.canvas = document.getElementById("replay-canvas");
@@ -24,6 +31,7 @@ class F1ReplayApp {
 
         this.transform = null;
         this.lastTimestamp = 0;
+        this.isQualifying = false;
 
         this._setupCanvas();
         this._setupEvents();
@@ -100,16 +108,32 @@ class F1ReplayApp {
         progress.classList.remove("hidden");
 
         try {
-            // Preload images
-            status.textContent = "Loading assets...";
+            // Load session data first to check session type
+            status.textContent = "Loading manifest...";
             bar.style.width = "5%";
-            await this.renderer.preloadImages();
-
-            // Load session data
             const manifest = await this.loader.loadSession(sessionDir, (msg, pct) => {
                 status.textContent = msg;
                 bar.style.width = pct + "%";
             });
+
+            // Check if this is a qualifying session
+            this.isQualifying = QUALIFYING_SESSIONS.includes(manifest.sessionCode);
+
+            // Create appropriate renderer and state based on session type
+            if (this.isQualifying) {
+                const { QualifyingRenderer } = await import("./qualifying-renderer.js");
+                const { QualifyingState } = await import("./qualifying-state.js");
+                this.renderer = new QualifyingRenderer();
+                this.state = new QualifyingState();
+            } else {
+                this.renderer = new Renderer();
+                this.state = new PlaybackState();
+            }
+
+            // Preload images
+            status.textContent = "Loading assets...";
+            bar.style.width = "70%";
+            await this.renderer.preloadImages();
 
             // Set up state
             this.state.manifest = manifest;
@@ -229,17 +253,31 @@ class F1ReplayApp {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        // Progress bar click
+        // Progress bar click (common to both modes)
         if (this.state.showProgressBar && progressBarRect) {
             const pb = progressBarRect;
             if (x >= pb.x && x <= pb.x + pb.w && y >= pb.y && y <= pb.y + pb.h) {
                 const progress = (x - pb.barX) / pb.barW;
                 this.state.frameIdx = Math.max(0,
                     Math.min(progress * (this.state.totalFrames - 1), this.state.totalFrames - 1));
+                // Clear telemetry on seek (if qualifying mode)
+                if (this.isQualifying && this.state.clearTelemetry) {
+                    this.state.clearTelemetry();
+                }
                 return;
             }
         }
 
+        if (this.isQualifying) {
+            // Qualifying UI click handling
+            this._onQualifyingClick(x, y);
+        } else {
+            // Race UI click handling
+            this._onRaceClick(x, y);
+        }
+    }
+
+    _onRaceClick(x, y) {
         // Leaderboard arrow click
         if (leaderboardArrowRect) {
             const ar = leaderboardArrowRect;
@@ -267,17 +305,48 @@ class F1ReplayApp {
         }
     }
 
+    _onQualifyingClick(x, y) {
+        // Mini track click (select driver by clicking on dot)
+        for (const r of miniTrackClickRects) {
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+                this.state.selectedDriver = r.driver;
+                return;
+            }
+        }
+
+        // Lap times panel row click
+        for (const r of lapTimesRects) {
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+                this.state.selectedDriver = r.driver;
+                return;
+            }
+        }
+    }
+
     _onMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
         this.state.hoverIndex = null;
-        for (let i = 0; i < leaderboardRects.length; i++) {
-            const r = leaderboardRects[i];
-            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-                this.state.hoverIndex = i;
-                break;
+
+        if (this.isQualifying) {
+            // Qualifying UI hover handling (lap times panel)
+            for (let i = 0; i < lapTimesRects.length; i++) {
+                const r = lapTimesRects[i];
+                if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+                    this.state.hoverIndex = i;
+                    break;
+                }
+            }
+        } else {
+            // Race UI hover handling (leaderboard)
+            for (let i = 0; i < leaderboardRects.length; i++) {
+                const r = leaderboardRects[i];
+                if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+                    this.state.hoverIndex = i;
+                    break;
+                }
             }
         }
     }
