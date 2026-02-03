@@ -11,6 +11,7 @@ export class PlaybackState {
         this.showUI = true;
         this.showProgressBar = true;
         this.leaderboardCollapsed = false;
+        this.speedTrapCollapsed = false;
 
         this.selectedDriver = null;
         this.hoverIndex = null;

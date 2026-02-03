@@ -11,7 +11,7 @@ import { drawProgressBar } from "./panels/progress-bar.js";
 import { drawTrackStatus } from "./panels/track-status.js";
 import { drawFastestLap } from "./panels/fastest-lap.js";
 import { drawRaceMessages } from "./panels/race-messages.js";
-import { drawOvertakeFeed } from "./panels/overtake-feed.js";
+// Overtake feed removed - not useful
 import { drawSpeedTrap } from "./panels/speed-trap.js";
 import { drawControls } from "./panels/controls.js";
 import { COLORS } from "./utils.js";
@@ -95,8 +95,7 @@ export class Renderer {
             drawTrackStatus(ctx, frame, W, H);
             drawFastestLap(ctx, frame, W, H);
             drawRaceMessages(ctx, frame, W, H);
-            drawOvertakeFeed(ctx, frame, state, manifest, W, H);
-            drawSpeedTrap(ctx, manifest, W, H);
+            drawSpeedTrap(ctx, state, manifest, W, H);
         }
 
         // Progress bar (separate toggle)

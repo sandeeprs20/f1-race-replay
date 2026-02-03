@@ -11,6 +11,7 @@ import { Renderer } from "./renderer.js";
 import { buildWorldToScreenTransform } from "./transform.js";
 import { leaderboardRects, leaderboardArrowRect } from "./panels/leaderboard.js";
 import { progressBarRect } from "./panels/progress-bar.js";
+import { speedTrapArrowRect } from "./panels/speed-trap.js";
 
 class F1ReplayApp {
     constructor() {
@@ -212,6 +213,9 @@ class F1ReplayApp {
             case "KeyL":
                 this.state.leaderboardCollapsed = !this.state.leaderboardCollapsed;
                 break;
+            case "KeyT":
+                this.state.speedTrapCollapsed = !this.state.speedTrapCollapsed;
+                break;
             case "KeyF":
             case "F11":
                 e.preventDefault();
@@ -241,6 +245,15 @@ class F1ReplayApp {
             const ar = leaderboardArrowRect;
             if (x >= ar.x && x <= ar.x + ar.w && y >= ar.y && y <= ar.y + ar.h) {
                 this.state.leaderboardCollapsed = !this.state.leaderboardCollapsed;
+                return;
+            }
+        }
+
+        // Speed trap arrow click
+        if (speedTrapArrowRect) {
+            const ar = speedTrapArrowRect;
+            if (x >= ar.x && x <= ar.x + ar.w && y >= ar.y && y <= ar.y + ar.h) {
+                this.state.speedTrapCollapsed = !this.state.speedTrapCollapsed;
                 return;
             }
         }
