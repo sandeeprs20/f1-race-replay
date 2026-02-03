@@ -27,11 +27,19 @@ A Formula 1 race replay visualizer that downloads real telemetry data via [FastF
 
 ## Tech Stack
 
+**Desktop App (Python):**
 - **Python 3.x**
 - **[Arcade](https://api.arcade.academy/)** -- 2D graphics engine for rendering
 - **[FastF1](https://github.com/theOehrly/Fast-F1)** -- official F1 telemetry data library
 - **NumPy** -- numerical operations and array manipulation
 - **Pandas** -- data manipulation
+- **scikit-learn** -- machine learning for tyre degradation analysis
+- **Matplotlib / Seaborn** -- chart rendering for analysis UI
+
+**Web Frontend:**
+- **JavaScript (ES6+)** -- vanilla JS with ES modules, no frameworks
+- **HTML5 Canvas** -- 2D rendering
+- **CSS3** -- styling
 
 ## Getting Started
 
