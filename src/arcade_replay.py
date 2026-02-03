@@ -436,6 +436,54 @@ class F1ReplayWindow(arcade.Window):
         # Click rects for leaderboard rows (rebuilt each draw)
         self._lb_rects = []
 
+        # ---------------------------
+        # Pre-created Text objects for performance (avoid draw_text)
+        # ---------------------------
+        # Track status badge text
+        self.track_status_text = arcade.Text(
+            "", 0, 0, F1_WHITE, 12, bold=True, anchor_x="center", anchor_y="center"
+        )
+
+        # Fastest lap banner text
+        self.fastest_lap_text = arcade.Text(
+            "", 0, 0, F1_WHITE, 13, bold=True, anchor_x="center", anchor_y="center"
+        )
+
+        # Race messages (pool of 2)
+        self.race_msg_texts = [
+            arcade.Text("", 0, 0, INTERVAL_YELLOW, 10, anchor_x="center")
+            for _ in range(2)
+        ]
+
+        # Overtakes panel
+        self.overtakes_title_text = arcade.Text(
+            "OVERTAKES", 0, 0, F1_WHITE, 13, bold=True, anchor_y="top"
+        )
+        self.overtake_item_texts = [
+            arcade.Text("", 0, 0, F1_WHITE, 12) for _ in range(2)
+        ]
+
+        # Pit stops panel
+        self.pit_stops_title_text = arcade.Text(
+            "PIT STOPS", 0, 0, F1_WHITE, 11, bold=True
+        )
+        self.pit_stop_item_texts = [
+            arcade.Text("", 0, 0, F1_WHITE, 10) for _ in range(3)
+        ]
+
+        # Top speeds panel
+        self.top_speeds_title_text = arcade.Text(
+            "TOP SPEEDS", 0, 0, F1_WHITE, 13, bold=True, anchor_y="top"
+        )
+        self.top_speed_item_texts = [
+            arcade.Text("", 0, 0, F1_WHITE, 13) for _ in range(3)
+        ]
+
+        # Pit lane label
+        self.pit_lane_text = arcade.Text(
+            "PIT", 0, 0, F1_LIGHT_GRAY, 8, bold=True
+        )
+
     # ---------------------------
     # Playback
     # ---------------------------
@@ -1155,17 +1203,12 @@ class F1ReplayWindow(arcade.Window):
         # Background
         draw_rounded_rectangle(badge_x, badge_y, badge_w, badge_h, (*color, 230), 4)
 
-        # Text
-        arcade.draw_text(
-            text,
-            self.width // 2,
-            badge_y + badge_h // 2,
-            F1_WHITE if status != "YELLOW" else F1_BLACK,
-            12,
-            bold=True,
-            anchor_x="center",
-            anchor_y="center",
-        )
+        # Text (using pre-created Text object)
+        self.track_status_text.text = text
+        self.track_status_text.x = self.width // 2
+        self.track_status_text.y = badge_y + badge_h // 2
+        self.track_status_text.color = F1_WHITE if status != "YELLOW" else F1_BLACK
+        self.track_status_text.draw()
 
     def _draw_fastest_lap_banner(self, frame):
         """Draw fastest lap banner when a new fastest lap is set."""
@@ -1195,17 +1238,11 @@ class F1ReplayWindow(arcade.Window):
             banner_x, banner_y, banner_w, banner_h, (*FASTEST_PURPLE, 240), 4
         )
 
-        # Text
-        arcade.draw_text(
-            f"FASTEST LAP - {driver} - {time_str}",
-            self.width // 2,
-            banner_y + banner_h // 2,
-            F1_WHITE,
-            13,
-            bold=True,
-            anchor_x="center",
-            anchor_y="center",
-        )
+        # Text (using pre-created Text object)
+        self.fastest_lap_text.text = f"FASTEST LAP - {driver} - {time_str}"
+        self.fastest_lap_text.x = self.width // 2
+        self.fastest_lap_text.y = banner_y + banner_h // 2
+        self.fastest_lap_text.draw()
 
     def _draw_race_messages(self, frame):
         """Draw race director messages (blue flags, penalties, track limits)."""
@@ -1235,14 +1272,12 @@ class F1ReplayWindow(arcade.Window):
             if len(message) > 60:
                 message = message[:57] + "..."
 
-            arcade.draw_text(
-                message,
-                msg_x,
-                msg_y + i * 18,
-                color,
-                10,
-                anchor_x="center",
-            )
+            # Use pre-created Text object
+            self.race_msg_texts[i].text = message
+            self.race_msg_texts[i].x = msg_x
+            self.race_msg_texts[i].y = msg_y + i * 18
+            self.race_msg_texts[i].color = color
+            self.race_msg_texts[i].draw()
 
     def _draw_overtake_feed(self, frame):
         """Draw recent overtakes feed."""
@@ -1281,19 +1316,15 @@ class F1ReplayWindow(arcade.Window):
 
         draw_f1_panel(panel_x, panel_y, panel_w, panel_h, 4)
 
-        # Title (same layout as weather box)
-        arcade.draw_text(
-            "OVERTAKES",
-            panel_x + 12,
-            panel_y + panel_h - 12,
-            F1_WHITE,
-            13,
-            bold=True,
-            anchor_y="top",
-        )
+        # Title (using pre-created Text object)
+        self.overtakes_title_text.x = panel_x + 12
+        self.overtakes_title_text.y = panel_y + panel_h - 12
+        self.overtakes_title_text.draw()
 
         y_offset = panel_y + panel_h - 48
-        for overtake in reversed(self.recent_overtakes):
+        for idx, overtake in enumerate(reversed(self.recent_overtakes)):
+            if idx >= len(self.overtake_item_texts):
+                break
             driver = overtake.get("driver", "")
             passed = overtake.get("passed", "")
             new_pos = overtake.get("new_pos", 0)
@@ -1304,7 +1335,11 @@ class F1ReplayWindow(arcade.Window):
                 text = f"{driver} gains P{new_pos}"
 
             driver_col = self.driver_colors.get(driver, F1_WHITE)
-            arcade.draw_text(text, panel_x + 12, y_offset, driver_col, 12)
+            self.overtake_item_texts[idx].text = text
+            self.overtake_item_texts[idx].x = panel_x + 12
+            self.overtake_item_texts[idx].y = y_offset
+            self.overtake_item_texts[idx].color = driver_col
+            self.overtake_item_texts[idx].draw()
             y_offset -= 26
 
     def _draw_pit_summary(self, frame):
@@ -1335,17 +1370,15 @@ class F1ReplayWindow(arcade.Window):
 
         draw_f1_panel(panel_x, panel_y, panel_w, panel_h, 4)
 
-        arcade.draw_text(
-            "PIT STOPS",
-            panel_x + 12,
-            panel_y + panel_h - 12,
-            F1_WHITE,
-            11,
-            bold=True,
-        )
+        # Title (using pre-created Text object)
+        self.pit_stops_title_text.x = panel_x + 12
+        self.pit_stops_title_text.y = panel_y + panel_h - 12
+        self.pit_stops_title_text.draw()
 
         y_offset = panel_y + panel_h - 32
-        for pit in reversed(recent_pits):
+        for idx, pit in enumerate(reversed(recent_pits)):
+            if idx >= len(self.pit_stop_item_texts):
+                break
             driver = pit.get("driver", "")
             duration = pit.get("duration")
             compound = pit.get("compound", "")
@@ -1356,7 +1389,11 @@ class F1ReplayWindow(arcade.Window):
                 text += f" -> {compound[:3].upper()}"
 
             driver_col = self.driver_colors.get(driver, F1_WHITE)
-            arcade.draw_text(text, panel_x + 12, y_offset, driver_col, 10)
+            self.pit_stop_item_texts[idx].text = text
+            self.pit_stop_item_texts[idx].x = panel_x + 12
+            self.pit_stop_item_texts[idx].y = y_offset
+            self.pit_stop_item_texts[idx].color = driver_col
+            self.pit_stop_item_texts[idx].draw()
             y_offset -= 22
 
     def _draw_speed_trap(self, frame):
@@ -1374,25 +1411,25 @@ class F1ReplayWindow(arcade.Window):
 
         draw_f1_panel(panel_x, panel_y, panel_w, panel_h, 4)
 
-        # Title (same layout as weather box)
-        arcade.draw_text(
-            "TOP SPEEDS",
-            panel_x + 12,
-            panel_y + panel_h - 12,
-            F1_WHITE,
-            13,
-            bold=True,
-            anchor_y="top",
-        )
+        # Title (using pre-created Text object)
+        self.top_speeds_title_text.x = panel_x + 12
+        self.top_speeds_title_text.y = panel_y + panel_h - 12
+        self.top_speeds_title_text.draw()
 
         y_offset = panel_y + panel_h - 48
         for i, speed_entry in enumerate(top_speeds[:3]):
+            if i >= len(self.top_speed_item_texts):
+                break
             driver = speed_entry.get("driver", "")
             speed = speed_entry.get("speed", 0)
 
             driver_col = self.driver_colors.get(driver, F1_WHITE)
             text = f"{i + 1}. {driver} {speed:.1f} km/h"
-            arcade.draw_text(text, panel_x + 12, y_offset, driver_col, 13)
+            self.top_speed_item_texts[i].text = text
+            self.top_speed_item_texts[i].x = panel_x + 12
+            self.top_speed_item_texts[i].y = y_offset
+            self.top_speed_item_texts[i].color = driver_col
+            self.top_speed_item_texts[i].draw()
             y_offset -= 30
 
     def _draw_start_finish_line(self):
@@ -1454,15 +1491,10 @@ class F1ReplayWindow(arcade.Window):
 
         pit_x, pit_y = self.track_pts_screen[pit_idx]
 
-        # Draw pit lane indicator
-        arcade.draw_text(
-            "PIT",
-            pit_x + 15,
-            pit_y,
-            F1_LIGHT_GRAY,
-            8,
-            bold=True,
-        )
+        # Draw pit lane indicator (using pre-created Text object)
+        self.pit_lane_text.x = pit_x + 15
+        self.pit_lane_text.y = pit_y
+        self.pit_lane_text.draw()
 
         # Draw small marker
         arcade.draw_circle_outline(pit_x, pit_y, 8, F1_LIGHT_GRAY, 1)

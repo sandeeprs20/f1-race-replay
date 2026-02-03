@@ -22,6 +22,69 @@ from src.f1_data import (
     extract_pit_stops,
 )
 from src.team_colors import build_driver_colors
+from src.web_export import export_for_web
+
+
+def run_analysis_mode(args):
+    """
+    Run tyre degradation analysis mode.
+
+    Loads session data, trains ML model, and launches analysis UI.
+    """
+    from src.ml.feature_engineering import extract_tyre_features
+    from src.ml.tyre_degradation import TyreDegradationModel
+    from src.analysis.analysis_window import TyreAnalysisWindow
+
+    cache_dir = enable_cache(".fastf1-cache")
+    print(f"FastF1 cache enabled: {cache_dir}")
+
+    print(f"\nLoading session: {args.year} R{args.round} {args.session}")
+    session = load_session(
+        args.year, args.round, args.session, force_reload=args.force
+    )
+    info = get_session_info(session)
+
+    print(f"\n=== SESSION LOADED ===")
+    print(f"Event:   {info.event_name}")
+    print(f"Session: {info.session_name}")
+    print(f"Circuit: {info.circuit_name}")
+    print(f"Drivers ({len(info.drivers)}): {', '.join(info.drivers)}")
+
+    # Extract features for ML
+    print("\nExtracting tyre features...")
+    features_df = extract_tyre_features(session)
+    print(f"  Extracted {len(features_df)} lap records")
+    print(f"  Valid laps: {len(features_df[features_df['is_valid']])}")
+    print(f"  Compounds: {features_df['compound'].unique().tolist()}")
+
+    if features_df.empty:
+        print("Error: No features extracted. Cannot run analysis.")
+        return
+
+    # Train model
+    print("\nTraining tyre degradation model...")
+    model = TyreDegradationModel()
+    stats = model.train(features_df)
+
+    if "error" in stats:
+        print(f"Warning: Model training issue - {stats['error']}")
+    else:
+        print(f"  Training samples: {stats['n_samples']}")
+        print(f"  Train R²: {stats['train_r2']:.3f}")
+        print(f"  Validation R²: {stats['val_r2']:.3f}")
+        print(f"  Validation RMSE: {stats['val_rmse']:.3f}s")
+
+    # Launch analysis UI
+    print("\nLaunching Tyre Analysis UI...")
+    window = TyreAnalysisWindow(
+        session=session,
+        features_df=features_df,
+        model=model,
+        session_info=info,
+        width=1200,
+        height=800,
+    )
+    arcade.run()
 
 
 def build_tyre_map(session):
@@ -71,8 +134,15 @@ def main():
     parser.add_argument("--fps", type=int, default=25)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--fullscreen", action="store_true", help="Start in fullscreen mode")
+    parser.add_argument("--analysis", action="store_true", help="Open tyre analysis UI instead of replay")
+    parser.add_argument("--export-web", action="store_true", help="Export replay data as JSON for web frontend")
 
     args = parser.parse_args()
+
+    # If analysis mode, run separate analysis flow
+    if args.analysis:
+        run_analysis_mode(args)
+        return
 
     cache_dir = enable_cache(".fastf1-cache")
     print(f"FastF1 cache enabled: {cache_dir}")
@@ -210,6 +280,24 @@ def main():
     x_track, y_track, _speed_track = get_reference_track_xy(session)
     xmin, xmax, ymin, ymax = compute_bounds(x_track, y_track, pad=50.0)
 
+    driver_colors = build_driver_colors(frames[0]["drivers"].keys())
+
+    # Extract pit data for UI (need to do this even on cache hit)
+    pit_data = extract_pit_stops(session)
+
+    # Web export mode
+    if args.export_web:
+        export_for_web(
+            frames=frames,
+            track_x=x_track,
+            track_y=y_track,
+            driver_colors=driver_colors,
+            session_info=info,
+            fps=args.fps,
+            pit_data=pit_data,
+        )
+        return
+
     # Use larger window size (close to fullscreen)
     screen_w, screen_h = 1400, 700
 
@@ -217,14 +305,9 @@ def main():
         xmin, xmax, ymin, ymax, screen_w, screen_h
     )
 
-    driver_colors = build_driver_colors(frames[0]["drivers"].keys())
-
     # Get driver finishing status (Finished, Retired, DNF, etc.)
     driver_status = get_driver_status(session)
     print(f"Driver status: {driver_status}")
-
-    # Extract pit data for UI (need to do this even on cache hit)
-    pit_data = extract_pit_stops(session)
 
     window = F1ReplayWindow(
         frames=frames,

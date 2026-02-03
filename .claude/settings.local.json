@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(python -c:*)",
+      "Bash(python -m py_compile:*)"
+    ]
+  }
+}

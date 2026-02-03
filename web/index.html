@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 Race Replay</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="loading-overlay">
+        <div class="loader-content">
+            <h1>F1 RACE REPLAY</h1>
+            <div id="session-picker-container">
+                <label for="session-select">Select Session:</label>
+                <select id="session-select">
+                    <option value="">Loading sessions...</option>
+                </select>
+                <button id="load-btn" disabled>Load Replay</button>
+            </div>
+            <div id="load-progress" class="hidden">
+                <p id="load-status">Loading...</p>
+                <div class="progress-track">
+                    <div id="load-bar" class="progress-fill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <canvas id="replay-canvas"></canvas>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

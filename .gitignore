@@ -4,6 +4,6 @@ __pycache__/
 .fastf1-cache/
 computed_data/
 .DS_Store
-web/
 CLAUDE.md
 .claude/
+web/data/
